@@ -4,15 +4,15 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getMenuItemById, ORDER_STAGES } from '../data/mockData';
+import { io } from 'socket.io-client';
+import { API_BASE } from '../config';
 
 const REGISTERED_USER_KEY = '@food_app/registeredUser';
 const SESSION_KEY = '@food_app/session';
-const ORDER_STAGE_INTERVAL_MS = 4000;
-const MAX_PREVIOUSLY_ORDERED = 6;
 
 const AppContext = createContext(null);
 
@@ -20,9 +20,11 @@ export function AppProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [cart, setCart] = useState({});
-  const [order, setOrder] = useState(null);
-  const [orderHistory, setOrderHistory] = useState([]);
+  const [order, setOrder] = useState(null); // the order this customer placed, straight from the backend
+  const [menuItem, setMenuItem] = useState(null); // whatever the restaurant currently has live
+  const socketRef = useRef(null);
 
+  // Restore login session on app start (still local - no auth backend yet)
   useEffect(() => {
     AsyncStorage.getItem(SESSION_KEY)
       .then((raw) => {
@@ -31,13 +33,35 @@ export function AppProvider({ children }) {
       .finally(() => setIsRestoringSession(false));
   }, []);
 
+  // Connect to the backend once, for as long as the app is open
   useEffect(() => {
-    if (!order || order.stageIndex >= ORDER_STAGES.length - 1) return;
-    const timer = setTimeout(() => {
-      setOrder((prev) => (prev ? { ...prev, stageIndex: prev.stageIndex + 1 } : prev));
-    }, ORDER_STAGE_INTERVAL_MS);
-    return () => clearTimeout(timer);
-  }, [order]);
+    fetch(`${API_BASE}/api/menu/displayed`)
+      .then((res) => res.json())
+      .then((item) => setMenuItem(item))
+      .catch(() => {
+        // Backend not reachable - menuItem stays null and HomeScreen
+        // shows an empty state instead of crashing.
+      });
+
+    const socket = io(API_BASE);
+    socketRef.current = socket;
+
+    // Restaurant changed the displayed item - update instantly, same
+    // event the web dashboard and rider app already listen for.
+    socket.on('menu:updated', (item) => {
+      setMenuItem(item);
+    });
+
+    // A rider accepted (or any order changed status) - only react if
+    // it's the order this customer is actually tracking.
+    socket.on('order:updated', (updatedOrder) => {
+      setOrder((prev) => (prev && prev.id === updatedOrder.id ? updatedOrder : prev));
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   const signUp = useCallback(async ({ name, email, phone, address, password }) => {
     const profile = { name, email, phone, address, password };
@@ -76,7 +100,6 @@ export function AppProvider({ children }) {
     setUser(null);
     setCart({});
     setOrder(null);
-    setOrderHistory([]);
   }, []);
 
   const addToCart = useCallback((itemId, quantity = 1) => {
@@ -97,13 +120,16 @@ export function AppProvider({ children }) {
 
   const clearCart = useCallback(() => setCart({}), []);
 
+  // There's only ever one orderable item (whatever the restaurant has
+  // live), so every entry in the cart dict just points back to it.
   const cartItems = useMemo(
     () =>
-      Object.entries(cart)
-        .filter(([, quantity]) => quantity > 0)
-        .map(([itemId, quantity]) => ({ item: getMenuItemById(itemId), quantity }))
-        .filter((entry) => entry.item),
-    [cart]
+      menuItem
+        ? Object.entries(cart)
+            .filter(([, quantity]) => quantity > 0)
+            .map(([, quantity]) => ({ item: menuItem, quantity }))
+        : [],
+    [cart, menuItem]
   );
 
   const cartCount = useMemo(
@@ -116,46 +142,40 @@ export function AppProvider({ children }) {
     [cartItems]
   );
 
-  const cartRestaurantId = cartItems[0]?.item.restaurantId ?? null;
-
-  const replaceCart = useCallback((itemId, quantity = 1) => {
-    setCart({ [itemId]: quantity });
-  }, []);
-
-  const placeOrder = useCallback(() => {
-    if (cartCount === 0) return;
-    setOrder({
-      stageIndex: 0,
-      placedAt: new Date().toISOString(),
-      items: cartItems.map(({ item, quantity }) => ({ itemId: item.id, quantity })),
-    });
-    clearCart();
-  }, [cartCount, cartItems, clearCart]);
-
-  const resetOrder = useCallback(() => {
-    setOrder((current) => {
-      if (current) {
-        setOrderHistory((prev) => [current, ...prev]);
-      }
-      return null;
-    });
-  }, []);
-
-  const previouslyOrderedItems = useMemo(() => {
-    const seen = new Set();
-    const items = [];
-    for (const pastOrder of orderHistory) {
-      for (const { itemId } of pastOrder.items) {
-        if (seen.has(itemId)) continue;
-        const item = getMenuItemById(itemId);
-        if (!item) continue;
-        seen.add(itemId);
-        items.push(item);
-        if (items.length >= MAX_PREVIOUSLY_ORDERED) return items;
-      }
+  // Places a real order against the backend. Returns { success, message }
+  // so the screen can show an error instead of navigating blindly.
+  const placeOrder = useCallback(async () => {
+    if (cartCount === 0) {
+      return { success: false, message: 'Your cart is empty.' };
     }
-    return items;
-  }, [orderHistory]);
+    if (!user) {
+      return { success: false, message: 'You need to be logged in to order.' };
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerName: user.name }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        return { success: false, message: data.error || 'Could not place order.' };
+      }
+
+      setOrder(data);
+      clearCart();
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        message: 'Could not reach the server. Check that the backend is running and API_BASE in config.js is correct.',
+      };
+    }
+  }, [cartCount, user, clearCart]);
+
+  const resetOrder = useCallback(() => setOrder(null), []);
 
   const value = useMemo(
     () => ({
@@ -168,15 +188,13 @@ export function AppProvider({ children }) {
       cartItems,
       cartCount,
       cartTotal,
-      cartRestaurantId,
       addToCart,
-      replaceCart,
       setItemQuantity,
       clearCart,
+      menuItem,
       order,
       placeOrder,
       resetOrder,
-      previouslyOrderedItems,
     }),
     [
       user,
@@ -188,15 +206,13 @@ export function AppProvider({ children }) {
       cartItems,
       cartCount,
       cartTotal,
-      cartRestaurantId,
       addToCart,
-      replaceCart,
       setItemQuantity,
       clearCart,
+      menuItem,
       order,
       placeOrder,
       resetOrder,
-      previouslyOrderedItems,
     ]
   );
 

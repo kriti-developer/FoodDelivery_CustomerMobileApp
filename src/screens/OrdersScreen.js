@@ -2,7 +2,7 @@ import React from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { DELIVERY_PARTNER, getMenuItemById, ORDER_STAGES } from '../data/mockData';
+import { DELIVERY_PARTNER, ORDER_STAGES } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
 import { colors } from '../theme/colors';
@@ -24,29 +24,18 @@ export default function OrdersScreen({ navigation }) {
     );
   }
 
-  const { stageIndex } = order;
+  // The backend currently only tracks "pending" and "accepted" - this maps
+  // those onto the 4-stage UI. "Preparing" and "Delivered" aren't tracked
+  // server-side yet (see the backend README's "left out for next steps").
+  const stageIndex = order.status === 'accepted' ? 2 : 0;
   const isDelivered = stageIndex >= ORDER_STAGES.length - 1;
 
   return (
     <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
       <Text style={styles.heading}>Order Status</Text>
       <Text style={styles.orderTime}>
-        Placed at {new Date(order.placedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        Placed at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </Text>
-
-      <View style={styles.itemsCard}>
-        {order.items.map(({ itemId, quantity }) => {
-          const item = getMenuItemById(itemId);
-          if (!item) return null;
-          return (
-            <View key={itemId} style={styles.itemRow}>
-              <Text style={styles.itemEmoji}>{item.emoji}</Text>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemQty}>x{quantity}</Text>
-            </View>
-          );
-        })}
-      </View>
 
       <View style={styles.stagesCard}>
         {ORDER_STAGES.map((stage, index) => {
@@ -87,19 +76,25 @@ export default function OrdersScreen({ navigation }) {
             <Text style={styles.partnerEmoji}>{DELIVERY_PARTNER.emoji}</Text>
           </View>
           <View style={styles.partnerInfo}>
-            <Text style={styles.partnerName}>{DELIVERY_PARTNER.name}</Text>
-            <Text style={styles.partnerMeta}>{DELIVERY_PARTNER.vehicle}</Text>
-            <View style={styles.partnerRatingRow}>
-              <Ionicons name="star" size={13} color={colors.warning} />
-              <Text style={styles.partnerRating}>{DELIVERY_PARTNER.rating}</Text>
-            </View>
+            <Text style={styles.partnerName}>{order.riderName || 'Waiting for a rider…'}</Text>
+            {order.riderName && (
+              <>
+                <Text style={styles.partnerMeta}>{DELIVERY_PARTNER.vehicle}</Text>
+                <View style={styles.partnerRatingRow}>
+                  <Ionicons name="star" size={13} color={colors.warning} />
+                  <Text style={styles.partnerRating}>{DELIVERY_PARTNER.rating}</Text>
+                </View>
+              </>
+            )}
           </View>
-          <TouchableOpacity
-            style={styles.callButton}
-            onPress={() => Linking.openURL(`tel:${DELIVERY_PARTNER.phone}`)}
-          >
-            <Ionicons name="call" size={18} color="#fff" />
-          </TouchableOpacity>
+          {order.riderName && (
+            <TouchableOpacity
+              style={styles.callButton}
+              onPress={() => Linking.openURL(`tel:${DELIVERY_PARTNER.phone}`)}
+            >
+              <Ionicons name="call" size={18} color="#fff" />
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -130,31 +125,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 4,
     marginBottom: 20,
-  },
-  itemsCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 6,
-  },
-  itemEmoji: {
-    fontSize: 18,
-  },
-  itemName: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  itemQty: {
-    fontSize: 13,
-    color: colors.textMuted,
   },
   stagesCard: {
     backgroundColor: colors.card,
