@@ -1,20 +1,35 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DISHES, getTopRatedRestaurants, RESTAURANTS, searchCatalog } from '../data/mockData';
+import {
+  DISHES,
+  getTopRatedRestaurants,
+  RESTAURANTS,
+  searchCatalog,
+  sortRestaurants,
+} from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import RestaurantCard from '../components/RestaurantCard';
 import DishTile from '../components/DishTile';
+import CartBar from '../components/CartBar';
 import { colors } from '../theme/colors';
+
+const SORT_OPTIONS = [
+  { key: 'deliveryTime', label: 'Delivery Time' },
+  { key: 'rating', label: 'Rating' },
+  { key: 'cost', label: 'Cost' },
+];
 
 export default function HomeScreen({ navigation }) {
   const { user } = useApp();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState(null);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
   const topRated = useMemo(() => getTopRatedRestaurants(4), []);
+  const sortedRestaurants = useMemo(() => sortRestaurants(RESTAURANTS, sortBy), [sortBy]);
   const searchResults = useMemo(() => searchCatalog(query), [query]);
   const isSearching = query.trim().length > 0;
   const hasResults = searchResults.restaurants.length > 0 || searchResults.dishes.length > 0;
@@ -23,11 +38,11 @@ export default function HomeScreen({ navigation }) {
   const openDish = (dishId) => navigation.navigate('DishRestaurants', { dishId });
 
   return (
-    <ScrollView
-      style={styles.flex}
-      contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
-      keyboardShouldPersistTaps="handled"
-    >
+    <View style={styles.flex}>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+        keyboardShouldPersistTaps="handled"
+      >
       <Text style={styles.greeting}>Hi, {firstName} 👋</Text>
       <Text style={styles.heading}>What would you like to eat today?</Text>
 
@@ -103,7 +118,23 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           <Text style={styles.sectionTitle}>All Restaurants</Text>
-          {RESTAURANTS.map((restaurant) => (
+          <View style={styles.sortRow}>
+            {SORT_OPTIONS.map((option) => {
+              const isActive = sortBy === option.key;
+              return (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[styles.sortChip, isActive && styles.sortChipActive]}
+                  onPress={() => setSortBy(isActive ? null : option.key)}
+                >
+                  <Text style={[styles.sortChipText, isActive && styles.sortChipTextActive]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {sortedRestaurants.map((restaurant) => (
             <RestaurantCard
               key={restaurant.id}
               restaurant={restaurant}
@@ -112,7 +143,9 @@ export default function HomeScreen({ navigation }) {
           ))}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+      <CartBar />
+    </View>
   );
 }
 
@@ -120,7 +153,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   container: {
     paddingHorizontal: 20,
-    paddingBottom: 32,
+    paddingBottom: 90,
   },
   greeting: {
     fontSize: 15,
@@ -159,6 +192,31 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginTop: 8,
     marginBottom: 12,
+  },
+  sortRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  sortChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  sortChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  sortChipText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  sortChipTextActive: {
+    color: '#fff',
   },
   dishGrid: {
     flexDirection: 'row',

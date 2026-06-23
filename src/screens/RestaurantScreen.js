@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getMenuItemsByRestaurant, getRestaurantById } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import QuantityStepper from '../components/QuantityStepper';
+import CartBar from '../components/CartBar';
 import { colors } from '../theme/colors';
 
 export default function RestaurantScreen({ route }) {
@@ -35,7 +36,8 @@ export default function RestaurantScreen({ route }) {
   };
 
   return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.container}>
+    <View style={styles.flex}>
+      <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.header}>
         <View style={styles.emojiWrap}>
           <Text style={styles.emoji}>{restaurant.emoji}</Text>
@@ -76,7 +78,9 @@ export default function RestaurantScreen({ route }) {
           </View>
         );
       })}
-    </ScrollView>
+      </ScrollView>
+      <CartBar />
+    </View>
   );
 }
 
@@ -84,7 +88,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   container: {
     paddingHorizontal: 20,
-    paddingBottom: 32,
+    paddingBottom: 90,
   },
   header: {
     alignItems: 'center',

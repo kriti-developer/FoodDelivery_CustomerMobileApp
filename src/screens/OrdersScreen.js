@@ -8,6 +8,7 @@ import {
   DELIVERY_PARTNER,
   getRestaurantById,
   ORDER_STAGES,
+  parseDeliveryTime,
 } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
@@ -23,6 +24,7 @@ import { colors } from '../theme/colors';
 const STAGE_INTERVAL_MS = 4000;
 const RIDER_NAMES = ['Raj Kumar', 'Amit Singh', 'Suresh Patel', 'Vikram Yadav', 'Arjun Mehta'];
 const OUT_FOR_DELIVERY_INDEX = ORDER_STAGES.findIndex((stage) => stage.key === 'out_for_delivery');
+const TOTAL_TRIP_MS = (ORDER_STAGES.length - 1) * STAGE_INTERVAL_MS;
 
 export default function OrdersScreen({ navigation }) {
   const { order, resetOrder } = useApp();
@@ -31,12 +33,14 @@ export default function OrdersScreen({ navigation }) {
   const [riderName, setRiderName] = useState(null);
   const [stageChangedAt, setStageChangedAt] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [rating, setRating] = useState(0);
 
   useEffect(() => {
     if (!order) return;
     setStageIndex(0);
     setStageChangedAt(Date.now());
     setRiderName(RIDER_NAMES[Math.floor(Math.random() * RIDER_NAMES.length)]);
+    setRating(0);
   }, [order?.id]);
 
   useEffect(() => {
@@ -48,12 +52,12 @@ export default function OrdersScreen({ navigation }) {
     return () => clearTimeout(timer);
   }, [order?.id, stageIndex]);
 
-  const isTrackingActive = stageIndex === OUT_FOR_DELIVERY_INDEX;
+  const isDelivered = stageIndex >= ORDER_STAGES.length - 1;
   useEffect(() => {
-    if (!isTrackingActive) return;
+    if (!order || isDelivered) return;
     const interval = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(interval);
-  }, [isTrackingActive, stageChangedAt]);
+  }, [order?.id, isDelivered]);
 
   if (!order) {
     return (
@@ -68,9 +72,20 @@ export default function OrdersScreen({ navigation }) {
     );
   }
 
-  const isDelivered = stageIndex >= ORDER_STAGES.length - 1;
   const showMap = stageIndex >= OUT_FOR_DELIVERY_INDEX;
   const restaurant = getRestaurantById(order.restaurantId);
+
+  // ETA banner: starts at the restaurant's usual top-end estimate (e.g. "30"
+  // from "25-30 min") and counts down to 0 as the simulated trip progresses,
+  // so it reaches zero right as the order is marked delivered.
+  const etaTotalMinutes = restaurant ? parseDeliveryTime(restaurant.deliveryTime).max : null;
+  const tripElapsedMs = now - new Date(order.createdAt).getTime();
+  const tripProgress = Math.min(Math.max(tripElapsedMs / TOTAL_TRIP_MS, 0), 1);
+  const minutesRemaining = isDelivered
+    ? 0
+    : etaTotalMinutes
+    ? Math.max(1, Math.ceil(etaTotalMinutes * (1 - tripProgress)))
+    : null;
 
   let mapRegion = null;
   let partnerCoordinate = null;
@@ -98,6 +113,17 @@ export default function OrdersScreen({ navigation }) {
       <Text style={styles.orderTime}>
         Placed at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </Text>
+
+      <View style={styles.etaBanner}>
+        <Ionicons name="time-outline" size={20} color={colors.primary} />
+        <Text style={styles.etaText}>
+          {isDelivered
+            ? 'Delivered!'
+            : minutesRemaining
+            ? `Arriving in ${minutesRemaining} min`
+            : 'Calculating arrival time…'}
+        </Text>
+      </View>
 
       <View style={styles.stagesCard}>
         {ORDER_STAGES.map((stage, index) => {
@@ -183,7 +209,27 @@ export default function OrdersScreen({ navigation }) {
       {isDelivered && (
         <View style={styles.doneWrap}>
           <Text style={styles.doneText}>Your order has been delivered. Enjoy! 🎉</Text>
-          <PrimaryButton title="Done" onPress={resetOrder} />
+
+          <View style={styles.rateCard}>
+            <Text style={styles.rateTitle}>Rate {riderName}</Text>
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                  <Ionicons
+                    name={star <= rating ? 'star' : 'star-outline'}
+                    size={32}
+                    color={colors.warning}
+                    style={styles.starIcon}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <PrimaryButton
+            title={rating > 0 ? 'Submit Rating' : 'Done'}
+            onPress={resetOrder}
+          />
         </View>
       )}
     </ScrollView>
@@ -207,6 +253,21 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 4,
     marginBottom: 20,
+  },
+  etaBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFE9DD',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 16,
+  },
+  etaText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
   },
   stagesCard: {
     backgroundColor: colors.card,
@@ -348,6 +409,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
     textAlign: 'center',
+  },
+  rateCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+  },
+  rateTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  starsRow: {
+    flexDirection: 'row',
+  },
+  starIcon: {
+    marginHorizontal: 4,
   },
   emptyContainer: {
     flex: 1,

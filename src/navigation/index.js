@@ -13,6 +13,7 @@ import ItemDetailScreen from '../screens/ItemDetailScreen';
 import CartScreen from '../screens/CartScreen';
 import OrdersScreen from '../screens/OrdersScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
 import { getDishById, getRestaurantById } from '../data/mockData';
 import { colors } from '../theme/colors';
 
@@ -87,6 +88,11 @@ export default function RootNavigator() {
               name="ItemDetail"
               component={ItemDetailScreen}
               options={{ headerShown: true, title: 'Item Details' }}
+            />
+            <RootStack.Screen
+              name="EditProfile"
+              component={EditProfileScreen}
+              options={{ headerShown: true, title: 'Edit Profile' }}
             />
           </>
         ) : (
