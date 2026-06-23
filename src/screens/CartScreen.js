@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
+import { getRestaurantById } from '../data/mockData';
 import PrimaryButton from '../components/PrimaryButton';
 import QuantityStepper from '../components/QuantityStepper';
 import { colors } from '../theme/colors';
@@ -41,7 +42,8 @@ export default function CartScreen({ navigation }) {
             </View>
             <View style={styles.itemInfo}>
               <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemPrice}>FREE</Text>
+              <Text style={styles.itemRestaurant}>{getRestaurantById(item.restaurantId)?.name}</Text>
+              <Text style={styles.itemPrice}>{item.price === 0 ? 'FREE' : `$${item.price}`}</Text>
             </View>
             <QuantityStepper
               quantity={quantity}
@@ -70,7 +72,7 @@ export default function CartScreen({ navigation }) {
         </View>
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>FREE</Text>
+          <Text style={styles.totalValue}>{cartTotal === 0 ? 'FREE' : `$${cartTotal}`}</Text>
         </View>
       </ScrollView>
 
@@ -120,6 +122,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.text,
+  },
+  itemRestaurant: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 1,
   },
   itemPrice: {
     fontSize: 13,

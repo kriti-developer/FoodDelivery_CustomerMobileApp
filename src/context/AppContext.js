@@ -7,11 +7,12 @@ import React, {
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MENU_ITEM, ORDER_STAGES } from '../data/mockData';
+import { getMenuItemById, ORDER_STAGES } from '../data/mockData';
 
 const REGISTERED_USER_KEY = '@food_app/registeredUser';
 const SESSION_KEY = '@food_app/session';
 const ORDER_STAGE_INTERVAL_MS = 4000;
+const MAX_PREVIOUSLY_ORDERED = 6;
 
 const AppContext = createContext(null);
 
@@ -20,6 +21,7 @@ export function AppProvider({ children }) {
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [cart, setCart] = useState({});
   const [order, setOrder] = useState(null);
+  const [orderHistory, setOrderHistory] = useState([]);
 
   useEffect(() => {
     AsyncStorage.getItem(SESSION_KEY)
@@ -74,6 +76,7 @@ export function AppProvider({ children }) {
     setUser(null);
     setCart({});
     setOrder(null);
+    setOrderHistory([]);
   }, []);
 
   const addToCart = useCallback((itemId, quantity = 1) => {
@@ -98,7 +101,8 @@ export function AppProvider({ children }) {
     () =>
       Object.entries(cart)
         .filter(([, quantity]) => quantity > 0)
-        .map(([itemId, quantity]) => ({ item: MENU_ITEM, quantity })),
+        .map(([itemId, quantity]) => ({ item: getMenuItemById(itemId), quantity }))
+        .filter((entry) => entry.item),
     [cart]
   );
 
@@ -112,13 +116,46 @@ export function AppProvider({ children }) {
     [cartItems]
   );
 
+  const cartRestaurantId = cartItems[0]?.item.restaurantId ?? null;
+
+  const replaceCart = useCallback((itemId, quantity = 1) => {
+    setCart({ [itemId]: quantity });
+  }, []);
+
   const placeOrder = useCallback(() => {
     if (cartCount === 0) return;
-    setOrder({ stageIndex: 0, placedAt: new Date().toISOString() });
+    setOrder({
+      stageIndex: 0,
+      placedAt: new Date().toISOString(),
+      items: cartItems.map(({ item, quantity }) => ({ itemId: item.id, quantity })),
+    });
     clearCart();
-  }, [cartCount, clearCart]);
+  }, [cartCount, cartItems, clearCart]);
 
-  const resetOrder = useCallback(() => setOrder(null), []);
+  const resetOrder = useCallback(() => {
+    setOrder((current) => {
+      if (current) {
+        setOrderHistory((prev) => [current, ...prev]);
+      }
+      return null;
+    });
+  }, []);
+
+  const previouslyOrderedItems = useMemo(() => {
+    const seen = new Set();
+    const items = [];
+    for (const pastOrder of orderHistory) {
+      for (const { itemId } of pastOrder.items) {
+        if (seen.has(itemId)) continue;
+        const item = getMenuItemById(itemId);
+        if (!item) continue;
+        seen.add(itemId);
+        items.push(item);
+        if (items.length >= MAX_PREVIOUSLY_ORDERED) return items;
+      }
+    }
+    return items;
+  }, [orderHistory]);
 
   const value = useMemo(
     () => ({
@@ -131,12 +168,15 @@ export function AppProvider({ children }) {
       cartItems,
       cartCount,
       cartTotal,
+      cartRestaurantId,
       addToCart,
+      replaceCart,
       setItemQuantity,
       clearCart,
       order,
       placeOrder,
       resetOrder,
+      previouslyOrderedItems,
     }),
     [
       user,
@@ -148,12 +188,15 @@ export function AppProvider({ children }) {
       cartItems,
       cartCount,
       cartTotal,
+      cartRestaurantId,
       addToCart,
+      replaceCart,
       setItemQuantity,
       clearCart,
       order,
       placeOrder,
       resetOrder,
+      previouslyOrderedItems,
     ]
   );
 

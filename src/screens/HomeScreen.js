@@ -1,62 +1,132 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MENU_ITEM, RESTAURANT } from '../data/mockData';
+import {
+  getRestaurantById,
+  getTopRatedRestaurants,
+  RESTAURANTS,
+  searchCatalog,
+} from '../data/mockData';
 import { useApp } from '../context/AppContext';
+import RestaurantCard from '../components/RestaurantCard';
+import DishCard from '../components/DishCard';
 import { colors } from '../theme/colors';
 
 export default function HomeScreen({ navigation }) {
-  const { user } = useApp();
+  const { user, previouslyOrderedItems } = useApp();
   const insets = useSafeAreaInsets();
+  const [query, setQuery] = useState('');
   const firstName = user?.name?.split(' ')[0] || 'there';
+
+  const topRated = useMemo(() => getTopRatedRestaurants(4), []);
+  const searchResults = useMemo(() => searchCatalog(query), [query]);
+  const isSearching = query.trim().length > 0;
+  const hasResults = searchResults.restaurants.length > 0 || searchResults.items.length > 0;
+
+  const openRestaurant = (restaurantId) => navigation.navigate('Restaurant', { restaurantId });
+  const openItem = (itemId) => navigation.navigate('ItemDetail', { itemId });
 
   return (
     <ScrollView
       style={styles.flex}
       contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+      keyboardShouldPersistTaps="handled"
     >
       <Text style={styles.greeting}>Hi, {firstName} 👋</Text>
       <Text style={styles.heading}>What would you like to eat today?</Text>
 
-      <View style={styles.restaurantCard}>
-        <View style={styles.restaurantEmojiWrap}>
-          <Text style={styles.restaurantEmoji}>{RESTAURANT.emoji}</Text>
-        </View>
-        <View style={styles.restaurantInfo}>
-          <Text style={styles.restaurantName}>{RESTAURANT.name}</Text>
-          <Text style={styles.restaurantTagline}>{RESTAURANT.tagline}</Text>
-          <View style={styles.metaRow}>
-            <Ionicons name="star" size={14} color={colors.warning} />
-            <Text style={styles.metaText}>{RESTAURANT.rating}</Text>
-            <Ionicons name="time-outline" size={14} color={colors.textMuted} style={styles.metaIconSpacing} />
-            <Text style={styles.metaText}>{RESTAURANT.deliveryTime}</Text>
-          </View>
-          <Text style={styles.address}>{RESTAURANT.address}</Text>
-        </View>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search restaurants or dishes"
+          placeholderTextColor={colors.textMuted}
+          value={query}
+          onChangeText={setQuery}
+          autoCapitalize="none"
+          returnKeyType="search"
+        />
+        {isSearching && (
+          <Ionicons
+            name="close-circle"
+            size={18}
+            color={colors.textMuted}
+            onPress={() => setQuery('')}
+          />
+        )}
       </View>
 
-      <Text style={styles.sectionTitle}>Today's Special</Text>
-
-      <TouchableOpacity
-        style={styles.itemCard}
-        activeOpacity={0.85}
-        onPress={() => navigation.navigate('ItemDetail', { itemId: MENU_ITEM.id })}
-      >
-        <View style={styles.itemEmojiWrap}>
-          <Text style={styles.itemEmoji}>{MENU_ITEM.emoji}</Text>
-        </View>
-        <View style={styles.itemInfo}>
-          <Text style={styles.itemName}>{MENU_ITEM.name}</Text>
-          <Text style={styles.itemDescription} numberOfLines={2}>
-            {MENU_ITEM.description}
-          </Text>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceBadge}>FREE</Text>
-            <Text style={styles.viewLink}>View item</Text>
+      {isSearching ? (
+        hasResults ? (
+          <>
+            {searchResults.restaurants.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Restaurants</Text>
+                {searchResults.restaurants.map((restaurant) => (
+                  <RestaurantCard
+                    key={restaurant.id}
+                    restaurant={restaurant}
+                    onPress={() => openRestaurant(restaurant.id)}
+                  />
+                ))}
+              </>
+            )}
+            {searchResults.items.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Dishes</Text>
+                {searchResults.items.map((item) => (
+                  <DishCard
+                    key={item.id}
+                    item={item}
+                    restaurantName={getRestaurantById(item.restaurantId)?.name}
+                    onPress={() => openItem(item.id)}
+                  />
+                ))}
+              </>
+            )}
+          </>
+        ) : (
+          <View style={styles.emptyResults}>
+            <Ionicons name="search-outline" size={40} color={colors.border} />
+            <Text style={styles.emptyResultsText}>No matches for "{query}"</Text>
           </View>
-        </View>
-      </TouchableOpacity>
+        )
+      ) : (
+        <>
+          <Text style={styles.sectionTitle}>Top Rated</Text>
+          {topRated.map((restaurant) => (
+            <RestaurantCard
+              key={restaurant.id}
+              restaurant={restaurant}
+              onPress={() => openRestaurant(restaurant.id)}
+            />
+          ))}
+
+          {previouslyOrderedItems.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Previously Ordered</Text>
+              {previouslyOrderedItems.map((item) => (
+                <DishCard
+                  key={item.id}
+                  item={item}
+                  restaurantName={getRestaurantById(item.restaurantId)?.name}
+                  onPress={() => openItem(item.id)}
+                />
+              ))}
+            </>
+          )}
+
+          <Text style={styles.sectionTitle}>All Restaurants</Text>
+          {RESTAURANTS.map((restaurant) => (
+            <RestaurantCard
+              key={restaurant.id}
+              restaurant={restaurant}
+              onPress={() => openRestaurant(restaurant.id)}
+            />
+          ))}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -76,120 +146,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     marginTop: 4,
-    marginBottom: 20,
+    marginBottom: 18,
   },
-  restaurantCard: {
+  searchBar: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 46,
+    gap: 10,
+    marginBottom: 24,
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
-  restaurantEmojiWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  restaurantEmoji: {
-    fontSize: 28,
-  },
-  restaurantInfo: {
+  searchInput: {
     flex: 1,
-  },
-  restaurantName: {
-    fontSize: 17,
-    fontWeight: '700',
+    fontSize: 14.5,
     color: colors.text,
-  },
-  restaurantTagline: {
-    fontSize: 13,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  metaText: {
-    fontSize: 13,
-    color: colors.text,
-    marginLeft: 4,
-  },
-  metaIconSpacing: {
-    marginLeft: 14,
-  },
-  address: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: 6,
   },
   sectionTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: colors.text,
-    marginTop: 28,
+    marginTop: 8,
     marginBottom: 12,
   },
-  itemCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  itemEmojiWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 14,
-    backgroundColor: colors.background,
+  emptyResults: {
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 40,
   },
-  itemEmoji: {
-    fontSize: 32,
-  },
-  itemInfo: {
-    flex: 1,
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  itemDescription: {
-    fontSize: 12.5,
+  emptyResultsText: {
+    fontSize: 14,
     color: colors.textMuted,
-    marginTop: 4,
-    lineHeight: 17,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  priceBadge: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.secondary,
-  },
-  viewLink: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.primary,
+    marginTop: 12,
   },
 });

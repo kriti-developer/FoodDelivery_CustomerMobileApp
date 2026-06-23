@@ -1,37 +1,63 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { MENU_ITEM, RESTAURANT } from '../data/mockData';
+import { getMenuItemById, getRestaurantById } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
 import QuantityStepper from '../components/QuantityStepper';
 import { colors } from '../theme/colors';
 
-export default function ItemDetailScreen({ navigation }) {
-  const { addToCart } = useApp();
+export default function ItemDetailScreen({ route, navigation }) {
+  const { addToCart, replaceCart, cartRestaurantId } = useApp();
   const [quantity, setQuantity] = useState(1);
+  const { itemId } = route.params;
+  const item = getMenuItemById(itemId);
+  const restaurant = item ? getRestaurantById(item.restaurantId) : null;
+
+  if (!item) return null;
+
+  const goToCart = () => navigation.navigate('MainTabs', { screen: 'Cart' });
 
   const handleAddToCart = () => {
-    addToCart(MENU_ITEM.id, quantity);
-    navigation.navigate('MainTabs', { screen: 'Cart' });
+    if (cartRestaurantId && cartRestaurantId !== item.restaurantId) {
+      const currentRestaurant = getRestaurantById(cartRestaurantId);
+      Alert.alert(
+        'Replace cart?',
+        `Your cart has items from ${currentRestaurant?.name || 'another restaurant'}. Adding this dish will clear them and start a new cart from ${restaurant.name}.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Replace Cart',
+            style: 'destructive',
+            onPress: () => {
+              replaceCart(item.id, quantity);
+              goToCart();
+            },
+          },
+        ]
+      );
+      return;
+    }
+    addToCart(item.id, quantity);
+    goToCart();
   };
 
   return (
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.banner}>
-          <Text style={styles.bannerEmoji}>{MENU_ITEM.emoji}</Text>
+          <Text style={styles.bannerEmoji}>{item.emoji}</Text>
         </View>
 
         <View style={styles.content}>
-          <Text style={styles.name}>{MENU_ITEM.name}</Text>
-          <Text style={styles.restaurant}>from {RESTAURANT.name}</Text>
+          <Text style={styles.name}>{item.name}</Text>
+          {restaurant && <Text style={styles.restaurant}>from {restaurant.name}</Text>}
 
           <View style={styles.priceBadgeWrap}>
-            <Text style={styles.priceBadge}>FREE</Text>
+            <Text style={styles.priceBadge}>{item.price === 0 ? 'FREE' : `$${item.price}`}</Text>
           </View>
 
-          <Text style={styles.description}>{MENU_ITEM.description}</Text>
+          <Text style={styles.description}>{item.description}</Text>
 
           <View style={styles.infoRow}>
             <Ionicons name="leaf-outline" size={16} color={colors.secondary} />
@@ -52,7 +78,10 @@ export default function ItemDetailScreen({ navigation }) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <PrimaryButton title={`Add ${quantity} to Cart • FREE`} onPress={handleAddToCart} />
+        <PrimaryButton
+          title={`Add ${quantity} to Cart • ${item.price === 0 ? 'FREE' : `$${item.price * quantity}`}`}
+          onPress={handleAddToCart}
+        />
       </View>
     </View>
   );

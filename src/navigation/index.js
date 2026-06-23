@@ -7,10 +7,12 @@ import { useApp } from '../context/AppContext';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import HomeScreen from '../screens/HomeScreen';
+import RestaurantScreen from '../screens/RestaurantScreen';
 import ItemDetailScreen from '../screens/ItemDetailScreen';
 import CartScreen from '../screens/CartScreen';
 import OrdersScreen from '../screens/OrdersScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import { getMenuItemById, getRestaurantById } from '../data/mockData';
 import { colors } from '../theme/colors';
 
 const RootStack = createNativeStackNavigator();
@@ -65,9 +67,20 @@ export default function RootNavigator() {
           <>
             <RootStack.Screen name="MainTabs" component={MainTabs} />
             <RootStack.Screen
+              name="Restaurant"
+              component={RestaurantScreen}
+              options={({ route }) => ({
+                headerShown: true,
+                title: getRestaurantById(route.params?.restaurantId)?.name || 'Restaurant',
+              })}
+            />
+            <RootStack.Screen
               name="ItemDetail"
               component={ItemDetailScreen}
-              options={{ headerShown: true, title: 'Item Details' }}
+              options={({ route }) => ({
+                headerShown: true,
+                title: getMenuItemById(route.params?.itemId)?.name || 'Item Details',
+              })}
             />
           </>
         ) : (

@@ -2,7 +2,7 @@ import React from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { DELIVERY_PARTNER, ORDER_STAGES } from '../data/mockData';
+import { DELIVERY_PARTNER, getMenuItemById, ORDER_STAGES } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
 import { colors } from '../theme/colors';
@@ -33,6 +33,20 @@ export default function OrdersScreen({ navigation }) {
       <Text style={styles.orderTime}>
         Placed at {new Date(order.placedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </Text>
+
+      <View style={styles.itemsCard}>
+        {order.items.map(({ itemId, quantity }) => {
+          const item = getMenuItemById(itemId);
+          if (!item) return null;
+          return (
+            <View key={itemId} style={styles.itemRow}>
+              <Text style={styles.itemEmoji}>{item.emoji}</Text>
+              <Text style={styles.itemName}>{item.name}</Text>
+              <Text style={styles.itemQty}>x{quantity}</Text>
+            </View>
+          );
+        })}
+      </View>
 
       <View style={styles.stagesCard}>
         {ORDER_STAGES.map((stage, index) => {
@@ -116,6 +130,31 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 4,
     marginBottom: 20,
+  },
+  itemsCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  itemEmoji: {
+    fontSize: 18,
+  },
+  itemName: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  itemQty: {
+    fontSize: 13,
+    color: colors.textMuted,
   },
   stagesCard: {
     backgroundColor: colors.card,
