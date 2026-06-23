@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { RESTAURANT } from '../data/mockData';
+import { RESTAURANTS } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
 import QuantityStepper from '../components/QuantityStepper';
@@ -33,7 +33,7 @@ export default function ItemDetailScreen({ navigation }) {
 
         <View style={styles.content}>
           <Text style={styles.name}>{menuItem.name}</Text>
-          <Text style={styles.restaurant}>from {RESTAURANT.name}</Text>
+          <Text style={styles.restaurant}>from {RESTAURANTS[0].name}</Text>
 
           <View style={styles.priceBadgeWrap}>
             <Text style={styles.priceBadge}>₹{menuItem.price}</Text>

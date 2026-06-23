@@ -12,7 +12,7 @@ const FIELDS = [
   { key: 'address', label: 'Delivery Address', icon: 'location-outline' },
 ];
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { user, logout } = useApp();
   const insets = useSafeAreaInsets();
   const initial = (user?.name || '?').trim().charAt(0).toUpperCase();
@@ -39,7 +39,9 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      <View style={styles.logoutWrap}>
+      <View style={styles.actionsWrap}>
+        <PrimaryButton title="Edit Profile" onPress={() => navigation.navigate('EditProfile')} />
+        <View style={styles.actionSpacer} />
         <PrimaryButton title="Log Out" onPress={logout} variant="outline" />
       </View>
     </ScrollView>
@@ -107,8 +109,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
-  logoutWrap: {
+  actionsWrap: {
     width: '100%',
     marginTop: 28,
+  },
+  actionSpacer: {
+    height: 12,
   },
 });

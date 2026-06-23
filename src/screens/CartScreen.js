@@ -45,7 +45,7 @@ export default function CartScreen({ navigation }) {
             </View>
             <View style={styles.itemInfo}>
               <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemPrice}>₹{item.price}</Text>
+              <Text style={styles.itemPrice}>{item.price === 0 ? 'FREE' : `₹${item.price}`}</Text>
             </View>
             <QuantityStepper
               quantity={quantity}
@@ -66,7 +66,7 @@ export default function CartScreen({ navigation }) {
         <Text style={styles.sectionTitle}>Order Summary</Text>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Items ({cartCount})</Text>
-          <Text style={styles.summaryValue}>₹{cartTotal}</Text>
+          <Text style={styles.summaryValue}>{cartTotal === 0 ? 'FREE' : `₹${cartTotal}`}</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Delivery Fee</Text>
@@ -74,7 +74,7 @@ export default function CartScreen({ navigation }) {
         </View>
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>₹{cartTotal}</Text>
+          <Text style={styles.totalValue}>{cartTotal === 0 ? 'FREE' : `₹${cartTotal}`}</Text>
         </View>
       </ScrollView>
 

@@ -10,6 +10,7 @@ import React, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io } from 'socket.io-client';
 import { API_BASE } from '../config';
+import { getMenuItemById } from '../data/mockData';
 
 const REGISTERED_USER_KEY = '@food_app/registeredUser';
 const SESSION_KEY = '@food_app/session';
@@ -102,6 +103,26 @@ export function AppProvider({ children }) {
     setOrder(null);
   }, []);
 
+  const updateProfile = useCallback(async ({ name, email, phone, address }) => {
+    const session = { name, email, phone, address };
+    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+
+    // Keep the registered account's contact details in sync too, so logging
+    // back in later still works and shows the updated info. Password is
+    // untouched - editing profile doesn't go through the password fields.
+    const raw = await AsyncStorage.getItem(REGISTERED_USER_KEY);
+    if (raw) {
+      const registered = JSON.parse(raw);
+      await AsyncStorage.setItem(
+        REGISTERED_USER_KEY,
+        JSON.stringify({ ...registered, name, email, phone, address })
+      );
+    }
+
+    setUser(session);
+    return { success: true };
+  }, []);
+
   const addToCart = useCallback((itemId, quantity = 1) => {
     setCart((prev) => ({ ...prev, [itemId]: (prev[itemId] || 0) + quantity }));
   }, []);
@@ -120,16 +141,14 @@ export function AppProvider({ children }) {
 
   const clearCart = useCallback(() => setCart({}), []);
 
-  // There's only ever one orderable item (whatever the restaurant has
-  // live), so every entry in the cart dict just points back to it.
+  // Cart entries are keyed by mock catalog item id (see src/data/mockData.js).
   const cartItems = useMemo(
     () =>
-      menuItem
-        ? Object.entries(cart)
-            .filter(([, quantity]) => quantity > 0)
-            .map(([, quantity]) => ({ item: menuItem, quantity }))
-        : [],
-    [cart, menuItem]
+      Object.entries(cart)
+        .filter(([, quantity]) => quantity > 0)
+        .map(([itemId, quantity]) => ({ item: getMenuItemById(itemId), quantity }))
+        .filter((entry) => entry.item),
+    [cart]
   );
 
   const cartCount = useMemo(
@@ -142,38 +161,35 @@ export function AppProvider({ children }) {
     [cartItems]
   );
 
-  // Places a real order against the backend. Returns { success, message }
-  // so the screen can show an error instead of navigating blindly.
-  const placeOrder = useCallback(async () => {
+  // The cart is restricted to one restaurant at a time, same as real food
+  // delivery apps - this is what screens check before calling addToCart,
+  // to decide whether to prompt "replace cart?" first.
+  const cartRestaurantId = cartItems[0]?.item.restaurantId ?? null;
+
+  const replaceCart = useCallback((itemId, quantity = 1) => {
+    setCart({ [itemId]: quantity });
+  }, []);
+
+  // Places a fully local order from the cart. This used to POST to the
+  // backend, but the backend's /api/orders always orders whatever item
+  // *it* currently has live, ignoring anything we send - it has no way to
+  // represent "this customer ordered this specific catalog item from this
+  // specific restaurant." So the order (and its tracking on OrdersScreen)
+  // is entirely client-side for now; the real backend connection is still
+  // used for the live menuItem/socket plumbing above, just not for orders.
+  const placeOrder = useCallback(() => {
     if (cartCount === 0) {
       return { success: false, message: 'Your cart is empty.' };
     }
-    if (!user) {
-      return { success: false, message: 'You need to be logged in to order.' };
-    }
-
-    try {
-      const res = await fetch(`${API_BASE}/api/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerName: user.name }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        return { success: false, message: data.error || 'Could not place order.' };
-      }
-
-      setOrder(data);
-      clearCart();
-      return { success: true };
-    } catch (err) {
-      return {
-        success: false,
-        message: 'Could not reach the server. Check that the backend is running and API_BASE in config.js is correct.',
-      };
-    }
-  }, [cartCount, user, clearCart]);
+    setOrder({
+      id: `local-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      restaurantId: cartRestaurantId,
+      items: cartItems.map(({ item, quantity }) => ({ itemId: item.id, quantity })),
+    });
+    clearCart();
+    return { success: true };
+  }, [cartCount, cartItems, cartRestaurantId, clearCart]);
 
   const resetOrder = useCallback(() => setOrder(null), []);
 
@@ -184,11 +200,14 @@ export function AppProvider({ children }) {
       signUp,
       login,
       logout,
+      updateProfile,
       cart,
       cartItems,
       cartCount,
       cartTotal,
+      cartRestaurantId,
       addToCart,
+      replaceCart,
       setItemQuantity,
       clearCart,
       menuItem,
@@ -202,11 +221,14 @@ export function AppProvider({ children }) {
       signUp,
       login,
       logout,
+      updateProfile,
       cart,
       cartItems,
       cartCount,
       cartTotal,
+      cartRestaurantId,
       addToCart,
+      replaceCart,
       setItemQuantity,
       clearCart,
       menuItem,
