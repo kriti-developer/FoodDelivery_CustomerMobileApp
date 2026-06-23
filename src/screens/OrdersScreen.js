@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,6 +34,7 @@ export default function OrdersScreen({ navigation }) {
   const [stageChangedAt, setStageChangedAt] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [rating, setRating] = useState(0);
+  const scrollViewRef = useRef(null);
 
   useEffect(() => {
     if (!order) return;
@@ -58,6 +59,12 @@ export default function OrdersScreen({ navigation }) {
     const interval = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(interval);
   }, [order?.id, isDelivered]);
+
+  useEffect(() => {
+    if (isDelivered) {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [isDelivered]);
 
   if (!order) {
     return (
@@ -108,7 +115,10 @@ export default function OrdersScreen({ navigation }) {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
+    <ScrollView
+      ref={scrollViewRef}
+      contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+    >
       <Text style={styles.heading}>Order Status</Text>
       <Text style={styles.orderTime}>
         Placed at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
