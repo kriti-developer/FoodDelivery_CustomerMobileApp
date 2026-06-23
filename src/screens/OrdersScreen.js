@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,9 +7,33 @@ import { useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
 import { colors } from '../theme/colors';
 
+// The backend only tracks "pending" and "accepted" orders, and only once a
+// real rider opens rider-app.html and accepts - there's no "preparing" or
+// "delivered" status, and waiting on a real rider is slow to test. So the
+// whole timeline below is simulated locally: a random driver is assigned
+// the moment the order is placed, and stages auto-advance on a timer. The
+// backend still has the real order in its own store (for the dashboard),
+// it just isn't what drives this screen anymore.
+const STAGE_INTERVAL_MS = 4000;
+const RIDER_NAMES = ['Raj Kumar', 'Amit Singh', 'Suresh Patel', 'Vikram Yadav', 'Arjun Mehta'];
+
 export default function OrdersScreen({ navigation }) {
   const { order, resetOrder } = useApp();
   const insets = useSafeAreaInsets();
+  const [stageIndex, setStageIndex] = useState(0);
+  const [riderName, setRiderName] = useState(null);
+
+  useEffect(() => {
+    if (!order) return;
+    setStageIndex(0);
+    setRiderName(RIDER_NAMES[Math.floor(Math.random() * RIDER_NAMES.length)]);
+  }, [order?.id]);
+
+  useEffect(() => {
+    if (!order || stageIndex >= ORDER_STAGES.length - 1) return;
+    const timer = setTimeout(() => setStageIndex((s) => s + 1), STAGE_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [order?.id, stageIndex]);
 
   if (!order) {
     return (
@@ -24,10 +48,6 @@ export default function OrdersScreen({ navigation }) {
     );
   }
 
-  // The backend currently only tracks "pending" and "accepted" - this maps
-  // those onto the 4-stage UI. "Preparing" and "Delivered" aren't tracked
-  // server-side yet (see the backend README's "left out for next steps").
-  const stageIndex = order.status === 'accepted' ? 2 : 0;
   const isDelivered = stageIndex >= ORDER_STAGES.length - 1;
 
   return (
@@ -76,25 +96,19 @@ export default function OrdersScreen({ navigation }) {
             <Text style={styles.partnerEmoji}>{DELIVERY_PARTNER.emoji}</Text>
           </View>
           <View style={styles.partnerInfo}>
-            <Text style={styles.partnerName}>{order.riderName || 'Waiting for a rider…'}</Text>
-            {order.riderName && (
-              <>
-                <Text style={styles.partnerMeta}>{DELIVERY_PARTNER.vehicle}</Text>
-                <View style={styles.partnerRatingRow}>
-                  <Ionicons name="star" size={13} color={colors.warning} />
-                  <Text style={styles.partnerRating}>{DELIVERY_PARTNER.rating}</Text>
-                </View>
-              </>
-            )}
+            <Text style={styles.partnerName}>{riderName}</Text>
+            <Text style={styles.partnerMeta}>{DELIVERY_PARTNER.vehicle}</Text>
+            <View style={styles.partnerRatingRow}>
+              <Ionicons name="star" size={13} color={colors.warning} />
+              <Text style={styles.partnerRating}>{DELIVERY_PARTNER.rating}</Text>
+            </View>
           </View>
-          {order.riderName && (
-            <TouchableOpacity
-              style={styles.callButton}
-              onPress={() => Linking.openURL(`tel:${DELIVERY_PARTNER.phone}`)}
-            >
-              <Ionicons name="call" size={18} color="#fff" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.callButton}
+            onPress={() => Linking.openURL(`tel:${DELIVERY_PARTNER.phone}`)}
+          >
+            <Ionicons name="call" size={18} color="#fff" />
+          </TouchableOpacity>
         </View>
       )}
 

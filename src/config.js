@@ -4,4 +4,4 @@
 //
 // Find your computer's LAN IP (Mac: System Settings > Wi-Fi > Details,
 // or run `ipconfig getifaddr en0` in a terminal) and put it below.
-export const API_BASE = "https://1e7d-2406-b400-b1-208e-4c6b-4210-5d86-6b1c.ngrok-free.app";
+export const API_BASE = "http://192.168.0.5:4000";
