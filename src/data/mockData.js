@@ -7,6 +7,7 @@ export const RESTAURANTS = [
     deliveryTime: '25-30 min',
     address: '123 Food Street, Flavor Town',
     emoji: '🍽️',
+    location: { latitude: 28.6139, longitude: 77.209 },
   },
   {
     id: 'r2',
@@ -16,6 +17,7 @@ export const RESTAURANTS = [
     deliveryTime: '30-35 min',
     address: '45 Curry Lane, Flavor Town',
     emoji: '🍛',
+    location: { latitude: 28.6304, longitude: 77.2177 },
   },
   {
     id: 'r3',
@@ -25,6 +27,7 @@ export const RESTAURANTS = [
     deliveryTime: '20-25 min',
     address: '9 Cheese Avenue, Flavor Town',
     emoji: '🍕',
+    location: { latitude: 28.6219, longitude: 77.2419 },
   },
   {
     id: 'r4',
@@ -34,6 +37,7 @@ export const RESTAURANTS = [
     deliveryTime: '25-30 min',
     address: '78 Noodle Road, Flavor Town',
     emoji: '🥡',
+    location: { latitude: 28.5921, longitude: 77.229 },
   },
   {
     id: 'r5',
@@ -43,6 +47,7 @@ export const RESTAURANTS = [
     deliveryTime: '15-20 min',
     address: '12 Grill Street, Flavor Town',
     emoji: '🍔',
+    location: { latitude: 28.6448, longitude: 77.2167 },
   },
   {
     id: 'r6',
@@ -52,6 +57,7 @@ export const RESTAURANTS = [
     deliveryTime: '20-25 min',
     address: '3 Sugar Boulevard, Flavor Town',
     emoji: '🍰',
+    location: { latitude: 28.6129, longitude: 77.2295 },
   },
 ];
 
@@ -162,6 +168,10 @@ export const DELIVERY_PARTNER = {
   rating: 4.8,
   emoji: '🛵',
 };
+
+// Mock coordinate for the customer's delivery address — there's no real
+// geocoding here, just a fixed point the partner marker travels to.
+export const DELIVERY_DESTINATION = { latitude: 28.6169, longitude: 77.2295 };
 
 export const ORDER_STAGES = [
   { key: 'placed', label: 'Order Placed', icon: '🧾' },

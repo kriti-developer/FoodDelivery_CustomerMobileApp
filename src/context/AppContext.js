@@ -11,7 +11,7 @@ import { getMenuItemById, ORDER_STAGES } from '../data/mockData';
 
 const REGISTERED_USER_KEY = '@food_app/registeredUser';
 const SESSION_KEY = '@food_app/session';
-const ORDER_STAGE_INTERVAL_MS = 4000;
+export const ORDER_STAGE_INTERVAL_MS = 4000;
 const MAX_PREVIOUSLY_ORDERED = 6;
 
 const AppContext = createContext(null);
@@ -34,7 +34,11 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!order || order.stageIndex >= ORDER_STAGES.length - 1) return;
     const timer = setTimeout(() => {
-      setOrder((prev) => (prev ? { ...prev, stageIndex: prev.stageIndex + 1 } : prev));
+      setOrder((prev) =>
+        prev
+          ? { ...prev, stageIndex: prev.stageIndex + 1, stageChangedAt: new Date().toISOString() }
+          : prev
+      );
     }, ORDER_STAGE_INTERVAL_MS);
     return () => clearTimeout(timer);
   }, [order]);
@@ -124,13 +128,16 @@ export function AppProvider({ children }) {
 
   const placeOrder = useCallback(() => {
     if (cartCount === 0) return;
+    const now = new Date().toISOString();
     setOrder({
       stageIndex: 0,
-      placedAt: new Date().toISOString(),
+      placedAt: now,
+      stageChangedAt: now,
+      restaurantId: cartRestaurantId,
       items: cartItems.map(({ item, quantity }) => ({ itemId: item.id, quantity })),
     });
     clearCart();
-  }, [cartCount, cartItems, clearCart]);
+  }, [cartCount, cartItems, cartRestaurantId, clearCart]);
 
   const resetOrder = useCallback(() => {
     setOrder((current) => {

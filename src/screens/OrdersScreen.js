@@ -1,15 +1,32 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { DELIVERY_PARTNER, getMenuItemById, ORDER_STAGES } from '../data/mockData';
-import { useApp } from '../context/AppContext';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import {
+  DELIVERY_DESTINATION,
+  DELIVERY_PARTNER,
+  getMenuItemById,
+  getRestaurantById,
+  ORDER_STAGES,
+} from '../data/mockData';
+import { ORDER_STAGE_INTERVAL_MS, useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
 import { colors } from '../theme/colors';
+
+const OUT_FOR_DELIVERY_INDEX = ORDER_STAGES.findIndex((stage) => stage.key === 'out_for_delivery');
 
 export default function OrdersScreen({ navigation }) {
   const { order, resetOrder } = useApp();
   const insets = useSafeAreaInsets();
+  const [now, setNow] = useState(Date.now());
+  const isTrackingActive = order?.stageIndex === OUT_FOR_DELIVERY_INDEX;
+
+  useEffect(() => {
+    if (!isTrackingActive) return;
+    const interval = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(interval);
+  }, [isTrackingActive, order?.stageChangedAt]);
 
   if (!order) {
     return (
@@ -26,6 +43,28 @@ export default function OrdersScreen({ navigation }) {
 
   const { stageIndex } = order;
   const isDelivered = stageIndex >= ORDER_STAGES.length - 1;
+  const showMap = stageIndex >= OUT_FOR_DELIVERY_INDEX;
+  const restaurant = getRestaurantById(order.restaurantId);
+
+  let mapRegion = null;
+  let partnerCoordinate = null;
+  if (showMap && restaurant) {
+    const start = restaurant.location;
+    const end = DELIVERY_DESTINATION;
+    const progress = isDelivered
+      ? 1
+      : Math.min(Math.max((now - new Date(order.stageChangedAt).getTime()) / ORDER_STAGE_INTERVAL_MS, 0), 1);
+    partnerCoordinate = {
+      latitude: start.latitude + (end.latitude - start.latitude) * progress,
+      longitude: start.longitude + (end.longitude - start.longitude) * progress,
+    };
+    mapRegion = {
+      latitude: (start.latitude + end.latitude) / 2,
+      longitude: (start.longitude + end.longitude) / 2,
+      latitudeDelta: Math.abs(start.latitude - end.latitude) * 2.5 + 0.02,
+      longitudeDelta: Math.abs(start.longitude - end.longitude) * 2.5 + 0.02,
+    };
+  }
 
   return (
     <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
@@ -80,6 +119,32 @@ export default function OrdersScreen({ navigation }) {
           );
         })}
       </View>
+
+      {showMap && restaurant && (
+        <View style={styles.mapWrap}>
+          <MapView style={styles.map} initialRegion={mapRegion}>
+            <Marker coordinate={restaurant.location}>
+              <View style={styles.pinWrap}>
+                <Text style={styles.pinEmoji}>{restaurant.emoji}</Text>
+              </View>
+            </Marker>
+            <Marker coordinate={DELIVERY_DESTINATION}>
+              <View style={styles.pinWrap}>
+                <Text style={styles.pinEmoji}>🏠</Text>
+              </View>
+            </Marker>
+            <Marker coordinate={partnerCoordinate}>
+              <Text style={styles.partnerMapEmoji}>{DELIVERY_PARTNER.emoji}</Text>
+            </Marker>
+            <Polyline
+              coordinates={[restaurant.location, DELIVERY_DESTINATION]}
+              strokeColor={colors.primary}
+              strokeWidth={3}
+              lineDashPattern={[8, 6]}
+            />
+          </MapView>
+        </View>
+      )}
 
       {!isDelivered && (
         <View style={styles.partnerCard}>
@@ -211,6 +276,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.primary,
     marginTop: 2,
+  },
+  mapWrap: {
+    height: 220,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 16,
+  },
+  map: {
+    flex: 1,
+  },
+  pinWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pinEmoji: {
+    fontSize: 17,
+  },
+  partnerMapEmoji: {
+    fontSize: 26,
   },
   partnerCard: {
     flexDirection: 'row',
