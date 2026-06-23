@@ -1,9 +1,9 @@
 # FoodExpress — Food Delivery App (Frontend)
 
-A React Native (Expo) frontend for a food delivery app. This is a **frontend-only**
-demo: there is no backend yet, so all data (the restaurant, the menu item, the
-delivery partner) is mocked locally. Authentication is also simulated entirely
-on-device using local storage — there is no real server-side auth.
+A React Native (Expo) frontend for a food delivery app. The menu item and
+order status come from a **real backend** over REST + Socket.IO (see
+"Connecting to the Backend" below). Sign up/log in is still simulated
+on-device with local storage — there is no auth backend yet.
 
 ## Tech Stack
 
@@ -12,13 +12,13 @@ on-device using local storage — there is no real server-side auth.
 - **React Navigation v6** — stack + bottom tab navigation
 - **React Context** — global app state (auth, cart, order)
 - **AsyncStorage** — persists the registered user and active session on-device
+- **Socket.IO client** — live updates for the menu item and order status, pushed from the backend/dashboard
 
 ## Demo Scope
 
-- 6 mock restaurants, each with a couple of menu items (12 dishes total)
+- 1 restaurant, 1 menu item — whichever one the restaurant dashboard currently has live
 - 1 customer (you, after signing up)
 - 1 delivery partner
-- All dishes priced **free**
 
 ## Features / Screens
 
@@ -26,11 +26,10 @@ on-device using local storage — there is no real server-side auth.
 |---|---|
 | Sign Up | Create a local account (name, email, phone, address, password) |
 | Log In | Authenticate against the locally stored account |
-| Home | Search bar (restaurants or dishes), Top Rated restaurants, Previously Ordered dishes (once you've placed an order), and the full restaurant list |
-| Restaurant | A restaurant's info and its menu |
+| Home | Restaurant info and today's live menu item (updates instantly if the dashboard changes it) |
 | Item Detail | Item info, quantity picker, add to cart |
-| Cart | Review items, quantities, delivery address, order summary, place order |
-| Orders | Live order status (Placed → Preparing → Out for Delivery → Delivered), items in the order, delivery partner info and a call button |
+| Cart | Review items, quantities, delivery address, order summary, place order against the backend |
+| Orders | Order status (Placed → Accepted, more stages pending backend support), rider info once assigned, call button |
 | Profile | Account details and log out |
 
 ## Project Structure
@@ -38,17 +37,17 @@ on-device using local storage — there is no real server-side auth.
 ```
 App.js                      Entry point — wraps the app in providers
 src/
+  config.js                  API_BASE — the backend's URL
   context/
-    AppContext.js            Global state: auth, cart, active order + order history (+ AsyncStorage persistence)
+    AppContext.js            Global state: auth (local), cart, live menu item + order (from backend)
   data/
-    mockData.js              Mock restaurants, menu items, delivery partner, order stages, search/lookup helpers
+    mockData.js              Restaurant info, delivery partner placeholder, order stage labels
   navigation/
     index.js                 Auth stack vs. main tab navigator, switches based on login state
   screens/
     LoginScreen.js
     SignupScreen.js
     HomeScreen.js
-    RestaurantScreen.js
     ItemDetailScreen.js
     CartScreen.js
     OrdersScreen.js
@@ -56,11 +55,28 @@ src/
   components/
     PrimaryButton.js          Reusable button (solid/outline variants)
     QuantityStepper.js        Reusable +/- quantity control
-    RestaurantCard.js         Restaurant row used on Home and search results
-    DishCard.js                Dish row used on Home, Restaurant, and search results
   theme/
     colors.js                 Shared color palette
 ```
+
+## Connecting to the Backend
+
+This app expects a backend running `GET /api/menu/displayed`, `POST /api/orders`,
+and Socket.IO events `menu:updated` / `order:updated`. Point the app at it by
+editing `src/config.js`:
+
+```js
+export const API_BASE = "http://<your-backend-host>:<port>";
+```
+
+- If the backend is running on the same computer as Metro, use that computer's
+  **LAN IP** (the same one you use for the Expo URL) — not `localhost`, since on
+  a physical phone "localhost" means the phone itself.
+- If the backend is exposed via a tunnel (ngrok, etc.), use that URL instead.
+  Tunnel URLs are temporary — if the app suddenly can't reach the server,
+  the tunnel likely expired and needs a fresh URL pasted in here.
+- If `API_BASE` is unreachable, Home shows an empty "nothing on the menu"
+  state and placing an order shows an error — it won't crash.
 
 ## Running the App
 
@@ -100,8 +116,7 @@ You have three options, depending on what you have available:
   (requires Android Studio + an emulator already set up).
 
 - **Web browser (quick look, not a true mobile preview):** press `w` in the
-  terminal. Requires `react-native-web` and `react-dom`, which Expo will offer
-  to install automatically the first time.
+  terminal.
 
 ### 4. Can't connect from your phone?
 
@@ -115,18 +130,11 @@ npx expo start --tunnel
 This routes the connection through Expo's relay so it works across networks —
 slower to load, but far more reliable than fighting network/firewall settings.
 
-## How Auth Works (No Backend)
+## How Auth Works (Still Local, No Auth Backend Yet)
 
 - **Sign Up** stores your account (including password, for this demo only) in
   AsyncStorage on your device, then logs you in.
 - **Log In** checks the email/password you enter against that stored account.
 - Your session persists across app restarts until you tap **Log Out**.
-- None of this is secure storage — it's a stand-in for a real backend and should
-  not be used as-is once a real auth API exists.
-
-## Swapping in a Real Backend Later
-
-All mock data lives in `src/data/mockData.js` and all app state logic lives in
-`src/context/AppContext.js`. To connect a real backend, replace the
-AsyncStorage calls and static imports in those two files with API calls — the
-screens themselves don't need to change since they only consume the context.
+- None of this is secure storage — it's a stand-in for a real auth API and
+  should not be used as-is in production.
