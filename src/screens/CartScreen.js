@@ -38,7 +38,7 @@ export default function CartScreen({ navigation }) {
       <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.heading}>Your Cart</Text>
 
-        {cartItems.map(({ item, quantity }) => (
+        {cartItems.map(({ item, quantity, note }) => (
           <View key={item.id} style={styles.cartRow}>
             <View style={styles.itemEmojiWrap}>
               <Text style={styles.itemEmoji}>{item.emoji}</Text>
@@ -46,6 +46,13 @@ export default function CartScreen({ navigation }) {
             <View style={styles.itemInfo}>
               <Text style={styles.itemName}>{item.name}</Text>
               <Text style={styles.itemPrice}>{item.price === 0 ? 'FREE' : `₹${item.price}`}</Text>
+              {/* Customisation note – shown only when present */}
+              {note ? (
+                <View style={styles.noteRow}>
+                  <Ionicons name="create-outline" size={12} color={colors.textMuted} />
+                  <Text style={styles.noteText} numberOfLines={2}>{note}</Text>
+                </View>
+              ) : null}
             </View>
             <QuantityStepper
               quantity={quantity}
@@ -99,7 +106,7 @@ const styles = StyleSheet.create({
   },
   cartRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: colors.card,
     borderRadius: 14,
     padding: 12,
@@ -130,6 +137,18 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     fontWeight: '600',
     marginTop: 2,
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    marginTop: 5,
+  },
+  noteText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textMuted,
+    lineHeight: 16,
   },
   divider: {
     height: 1,

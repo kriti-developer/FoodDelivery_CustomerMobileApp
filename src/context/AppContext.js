@@ -21,12 +21,12 @@ export function AppProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  // cart shape: { [itemId]: { quantity: number, note: string } }
   const [cart, setCart] = useState({});
-  const [order, setOrder] = useState(null); // the order this customer placed, straight from the backend
-  const [menuItem, setMenuItem] = useState(null); // whatever the restaurant currently has live
+  const [order, setOrder] = useState(null);
+  const [menuItem, setMenuItem] = useState(null);
   const socketRef = useRef(null);
 
-  // Restore login session on app start (still local - no auth backend yet)
   useEffect(() => {
     AsyncStorage.getItem(SESSION_KEY)
       .then((raw) => {
@@ -35,35 +35,23 @@ export function AppProvider({ children }) {
       .finally(() => setIsRestoringSession(false));
   }, []);
 
-  // Load the real catalog before any screen renders, so Home/Restaurant/
-  // DishRestaurants/ItemDetail/Cart - which all read RESTAURANTS/DISHES/
-  // MENU_ITEMS from mockData.js synchronously - see real data on their
-  // very first render instead of momentarily showing the mock fallback.
   useEffect(() => {
     loadCatalogFromBackend(API_BASE).finally(() => setIsLoadingCatalog(false));
   }, []);
 
-  // Connect to the backend once, for as long as the app is open
   useEffect(() => {
     fetch(`${API_BASE}/api/menu/displayed`)
       .then((res) => res.json())
       .then((item) => setMenuItem(item))
-      .catch(() => {
-        // Backend not reachable - menuItem stays null and HomeScreen
-        // shows an empty state instead of crashing.
-      });
+      .catch(() => {});
 
     const socket = io(API_BASE);
     socketRef.current = socket;
 
-    // Restaurant changed the displayed item - update instantly, same
-    // event the web dashboard and rider app already listen for.
     socket.on('menu:updated', (item) => {
       setMenuItem(item);
     });
 
-    // A rider accepted (or any order changed status) - only react if
-    // it's the order this customer is actually tracking.
     socket.on('order:updated', (updatedOrder) => {
       setOrder((prev) => (prev && prev._id === updatedOrder._id ? updatedOrder : prev));
     });
@@ -115,10 +103,6 @@ export function AppProvider({ children }) {
   const updateProfile = useCallback(async ({ name, email, phone, address }) => {
     const session = { name, email, phone, address };
     await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-
-    // Keep the registered account's contact details in sync too, so logging
-    // back in later still works and shows the updated info. Password is
-    // untouched - editing profile doesn't go through the password fields.
     const raw = await AsyncStorage.getItem(REGISTERED_USER_KEY);
     if (raw) {
       const registered = JSON.parse(raw);
@@ -127,13 +111,24 @@ export function AppProvider({ children }) {
         JSON.stringify({ ...registered, name, email, phone, address })
       );
     }
-
     setUser(session);
     return { success: true };
   }, []);
 
-  const addToCart = useCallback((itemId, quantity = 1) => {
-    setCart((prev) => ({ ...prev, [itemId]: (prev[itemId] || 0) + quantity }));
+  // Adds quantity to an item, optionally attaching/overwriting its note.
+  const addToCart = useCallback((itemId, quantity = 1, note = '') => {
+    setCart((prev) => {
+      const existing = prev[itemId] || { quantity: 0, note: '' };
+      return {
+        ...prev,
+        [itemId]: {
+          quantity: existing.quantity + quantity,
+          // Only overwrite the note if a non-empty one is provided,
+          // so increments from the QuantityStepper don't blank it out.
+          note: note !== '' ? note : existing.note,
+        },
+      };
+    });
   }, []);
 
   const setItemQuantity = useCallback((itemId, quantity) => {
@@ -142,7 +137,7 @@ export function AppProvider({ children }) {
       if (quantity <= 0) {
         delete next[itemId];
       } else {
-        next[itemId] = quantity;
+        next[itemId] = { ...(next[itemId] || { note: '' }), quantity };
       }
       return next;
     });
@@ -150,18 +145,21 @@ export function AppProvider({ children }) {
 
   const clearCart = useCallback(() => setCart({}), []);
 
-  // Cart entries are keyed by mock catalog item id (see src/data/mockData.js).
   const cartItems = useMemo(
     () =>
       Object.entries(cart)
-        .filter(([, quantity]) => quantity > 0)
-        .map(([itemId, quantity]) => ({ item: getMenuItemById(itemId), quantity }))
+        .filter(([, entry]) => entry.quantity > 0)
+        .map(([itemId, { quantity, note }]) => ({
+          item: getMenuItemById(itemId),
+          quantity,
+          note,
+        }))
         .filter((entry) => entry.item),
     [cart]
   );
 
   const cartCount = useMemo(
-    () => Object.values(cart).reduce((sum, qty) => sum + qty, 0),
+    () => Object.values(cart).reduce((sum, entry) => sum + (entry.quantity || 0), 0),
     [cart]
   );
 
@@ -170,18 +168,12 @@ export function AppProvider({ children }) {
     [cartItems]
   );
 
-  // The cart is restricted to one restaurant at a time, same as real food
-  // delivery apps - this is what screens check before calling addToCart,
-  // to decide whether to prompt "replace cart?" first.
   const cartRestaurantId = cartItems[0]?.item.restaurantId ?? null;
 
-  const replaceCart = useCallback((itemId, quantity = 1) => {
-    setCart({ [itemId]: quantity });
+  const replaceCart = useCallback((itemId, quantity = 1, note = '') => {
+    setCart({ [itemId]: { quantity, note } });
   }, []);
 
-  // Places a real order against the backend, now that cart items carry
-  // real catalog ids (see mockData.js's loadCatalogFromBackend) instead of
-  // hardcoded mock ones - so the rider app can actually see and accept it.
   const placeOrder = useCallback(async () => {
     if (cartCount === 0) {
       return { success: false, message: 'Your cart is empty.' };
@@ -193,10 +185,12 @@ export function AppProvider({ children }) {
         body: JSON.stringify({
           customerName: user?.name || 'Guest',
           restaurantId: cartRestaurantId,
-          items: cartItems.map(({ item, quantity }) => ({
+          items: cartItems.map(({ item, quantity, note }) => ({
             menuItem: item.id,
             quantity,
             price: item.price,
+            // note is sent to the backend so kitchen / rider can see it
+            ...(note ? { note } : {}),
           })),
         }),
       });

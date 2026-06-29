@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { RESTAURANTS } from '../data/mockData';
 import { useApp } from '../context/AppContext';
@@ -7,9 +13,12 @@ import PrimaryButton from '../components/PrimaryButton';
 import QuantityStepper from '../components/QuantityStepper';
 import { colors } from '../theme/colors';
 
+const NOTE_MAX_LENGTH = 150;
+
 export default function ItemDetailScreen({ navigation }) {
   const { menuItem, addToCart } = useApp();
   const [quantity, setQuantity] = useState(1);
+  const [note, setNote] = useState('');
 
   if (!menuItem) {
     return (
@@ -20,7 +29,7 @@ export default function ItemDetailScreen({ navigation }) {
   }
 
   const handleAddToCart = () => {
-    addToCart(menuItem.id, quantity);
+    addToCart(menuItem.id, quantity, note.trim());
     navigation.navigate('MainTabs', { screen: 'Cart' });
   };
 
@@ -56,12 +65,41 @@ export default function ItemDetailScreen({ navigation }) {
               onDecrease={() => setQuantity((q) => Math.max(q - 1, 1))}
             />
           </View>
+
+          <View style={styles.divider} />
+
+          {/* ── Customisation note ───────────────────────────────── */}
+          <View style={styles.noteSection}>
+            <View style={styles.noteLabelRow}>
+              <Ionicons name="create-outline" size={16} color={colors.textMuted} />
+              <Text style={styles.noteLabel}>Customisation</Text>
+              <Text style={styles.noteOptional}>(optional)</Text>
+            </View>
+            <TextInput
+              style={styles.noteInput}
+              placeholder="E.g. less spicy, no onions, extra sauce…"
+              placeholderTextColor={colors.textMuted}
+              value={note}
+              onChangeText={(text) =>
+                text.length <= NOTE_MAX_LENGTH && setNote(text)
+              }
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              returnKeyType="done"
+              blurOnSubmit
+            />
+            <Text style={styles.charCount}>
+              {note.length}/{NOTE_MAX_LENGTH}
+            </Text>
+          </View>
+          {/* ─────────────────────────────────────────────────────── */}
         </View>
       </ScrollView>
 
       <View style={styles.footer}>
         <PrimaryButton
-          title={`Add ${quantity} to Cart • ₹${menuItem.price * quantity}`}
+          title={`Add ${quantity} to Cart  •  ₹${menuItem.price * quantity}`}
           onPress={handleAddToCart}
         />
       </View>
@@ -136,6 +174,45 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
+  // ── note styles ──────────────────────────────────────────────
+  noteSection: {
+    marginBottom: 8,
+  },
+  noteLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  noteLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  noteOptional: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  noteInput: {
+    backgroundColor: colors.card,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
+    fontSize: 14,
+    color: colors.text,
+    minHeight: 88,
+    lineHeight: 20,
+  },
+  charCount: {
+    alignSelf: 'flex-end',
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  // ────────────────────────────────────────────────────────────
   footer: {
     padding: 20,
     borderTopWidth: 1,

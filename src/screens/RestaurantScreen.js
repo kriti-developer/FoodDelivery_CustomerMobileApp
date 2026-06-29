@@ -1,11 +1,26 @@
-import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getMenuItemsByRestaurant, getRestaurantById } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import QuantityStepper from '../components/QuantityStepper';
+import PrimaryButton from '../components/PrimaryButton';
 import CartBar from '../components/CartBar';
 import { colors } from '../theme/colors';
+
+const NOTE_MAX_LENGTH = 150;
 
 export default function RestaurantScreen({ route }) {
   const { restaurantId } = route.params;
@@ -13,8 +28,13 @@ export default function RestaurantScreen({ route }) {
   const menuItems = getMenuItemsByRestaurant(restaurantId);
   const { cart, addToCart, replaceCart, setItemQuantity, cartRestaurantId } = useApp();
 
+  // The item currently being customised (null = sheet closed)
+  const [pendingItem, setPendingItem] = useState(null);
+  const [pendingNote, setPendingNote] = useState('');
+
   if (!restaurant) return null;
 
+  // Called when user taps "Add" on a dish that has no cart entry yet.
   const handleAdd = (item) => {
     if (cartRestaurantId && cartRestaurantId !== item.restaurantId) {
       const currentRestaurant = getRestaurantById(cartRestaurantId);
@@ -26,60 +46,146 @@ export default function RestaurantScreen({ route }) {
           {
             text: 'Replace Cart',
             style: 'destructive',
-            onPress: () => replaceCart(item.id, 1),
+            onPress: () => openNoteSheet(item, true),
           },
         ]
       );
       return;
     }
-    addToCart(item.id, 1);
+    openNoteSheet(item, false);
+  };
+
+  const openNoteSheet = (item, replace) => {
+    setPendingItem({ item, replace });
+    setPendingNote('');
+  };
+
+  const confirmAdd = () => {
+    if (!pendingItem) return;
+    const { item, replace } = pendingItem;
+    if (replace) {
+      replaceCart(item.id, 1, pendingNote.trim());
+    } else {
+      addToCart(item.id, 1, pendingNote.trim());
+    }
+    setPendingItem(null);
+    setPendingNote('');
+  };
+
+  const cancelAdd = () => {
+    setPendingItem(null);
+    setPendingNote('');
   };
 
   return (
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.emojiWrap}>
-          <Text style={styles.emoji}>{restaurant.emoji}</Text>
-        </View>
-        <Text style={styles.name}>{restaurant.name}</Text>
-        <Text style={styles.cuisine}>{restaurant.cuisine}</Text>
-        <View style={styles.metaRow}>
-          <Ionicons name="star" size={14} color={colors.warning} />
-          <Text style={styles.metaText}>{restaurant.rating}</Text>
-          <Ionicons name="time-outline" size={14} color={colors.textMuted} style={styles.metaIconSpacing} />
-          <Text style={styles.metaText}>{restaurant.deliveryTime}</Text>
-        </View>
-        <Text style={styles.address}>{restaurant.address}</Text>
-      </View>
-
-      <Text style={styles.sectionTitle}>Menu</Text>
-      {menuItems.map((item) => {
-        const quantity = cart[item.id] || 0;
-        return (
-          <View key={item.id} style={styles.dishRow}>
-            <Text style={styles.dishEmoji}>{item.emoji}</Text>
-            <View style={styles.dishInfo}>
-              <Text style={styles.dishName}>{item.name}</Text>
-              <Text style={styles.dishPrice}>{item.price === 0 ? 'FREE' : `$${item.price}`}</Text>
-            </View>
-            {quantity > 0 ? (
-              <QuantityStepper
-                quantity={quantity}
-                size="small"
-                onIncrease={() => addToCart(item.id, 1)}
-                onDecrease={() => setItemQuantity(item.id, quantity - 1)}
-              />
-            ) : (
-              <TouchableOpacity style={styles.addButton} onPress={() => handleAdd(item)}>
-                <Text style={styles.addButtonText}>Add</Text>
-              </TouchableOpacity>
-            )}
+        <View style={styles.header}>
+          <View style={styles.emojiWrap}>
+            <Text style={styles.emoji}>{restaurant.emoji}</Text>
           </View>
-        );
-      })}
+          <Text style={styles.name}>{restaurant.name}</Text>
+          <Text style={styles.cuisine}>{restaurant.cuisine}</Text>
+          <View style={styles.metaRow}>
+            <Ionicons name="star" size={14} color={colors.warning} />
+            <Text style={styles.metaText}>{restaurant.rating}</Text>
+            <Ionicons name="time-outline" size={14} color={colors.textMuted} style={styles.metaIconSpacing} />
+            <Text style={styles.metaText}>{restaurant.deliveryTime}</Text>
+          </View>
+          <Text style={styles.address}>{restaurant.address}</Text>
+        </View>
+
+        <Text style={styles.sectionTitle}>Menu</Text>
+        {menuItems.map((item) => {
+          const entry = cart[item.id];
+          const quantity = entry ? entry.quantity : 0;
+          return (
+            <View key={item.id} style={styles.dishRow}>
+              <Text style={styles.dishEmoji}>{item.emoji}</Text>
+              <View style={styles.dishInfo}>
+                <Text style={styles.dishName}>{item.name}</Text>
+                <Text style={styles.dishPrice}>{item.price === 0 ? 'FREE' : `₹${item.price}`}</Text>
+                {/* Show the saved note inline so users can see what they requested */}
+                {entry?.note ? (
+                  <Text style={styles.dishNote} numberOfLines={1}>
+                    📝 {entry.note}
+                  </Text>
+                ) : null}
+              </View>
+              {quantity > 0 ? (
+                <QuantityStepper
+                  quantity={quantity}
+                  size="small"
+                  onIncrease={() => addToCart(item.id, 1)}
+                  onDecrease={() => setItemQuantity(item.id, quantity - 1)}
+                />
+              ) : (
+                <TouchableOpacity style={styles.addButton} onPress={() => handleAdd(item)}>
+                  <Text style={styles.addButtonText}>Add</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })}
       </ScrollView>
       <CartBar />
+
+      {/* ── Customisation bottom sheet ───────────────────────────── */}
+      <Modal
+        visible={!!pendingItem}
+        transparent
+        animationType="slide"
+        onRequestClose={cancelAdd}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          {/* Tap outside to dismiss */}
+          <Pressable style={styles.modalBackdrop} onPress={cancelAdd} />
+
+          <View style={styles.sheet}>
+            {/* Handle bar */}
+            <View style={styles.sheetHandle} />
+
+            <Text style={styles.sheetTitle}>
+              {pendingItem?.item.emoji}  {pendingItem?.item.name}
+            </Text>
+            <Text style={styles.sheetSubtitle}>
+              Any customisations? We'll pass them straight to the kitchen.
+            </Text>
+
+            <TextInput
+              style={styles.noteInput}
+              placeholder="E.g. less spicy, no onions, extra sauce…"
+              placeholderTextColor={colors.textMuted}
+              value={pendingNote}
+              onChangeText={(text) =>
+                text.length <= NOTE_MAX_LENGTH && setPendingNote(text)
+              }
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              autoFocus
+              returnKeyType="done"
+              blurOnSubmit
+            />
+            <Text style={styles.charCount}>
+              {pendingNote.length}/{NOTE_MAX_LENGTH}
+            </Text>
+
+            <View style={styles.sheetActions}>
+              <TouchableOpacity style={styles.skipButton} onPress={confirmAdd}>
+                <Text style={styles.skipText}>Skip & Add</Text>
+              </TouchableOpacity>
+              <View style={styles.sheetAddBtn}>
+                <PrimaryButton title="Add to Cart" onPress={confirmAdd} />
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      {/* ─────────────────────────────────────────────────────────── */}
     </View>
   );
 }
@@ -167,6 +273,11 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     marginTop: 2,
   },
+  dishNote: {
+    fontSize: 11.5,
+    color: colors.textMuted,
+    marginTop: 3,
+  },
   addButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -179,4 +290,79 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.primary,
   },
+  // ── modal / sheet ────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  sheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    paddingTop: 12,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: colors.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 6,
+  },
+  sheetSubtitle: {
+    fontSize: 13.5,
+    color: colors.textMuted,
+    marginBottom: 16,
+    lineHeight: 19,
+  },
+  noteInput: {
+    backgroundColor: colors.background,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
+    fontSize: 14,
+    color: colors.text,
+    minHeight: 88,
+    lineHeight: 20,
+  },
+  charCount: {
+    alignSelf: 'flex-end',
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 4,
+    marginBottom: 18,
+  },
+  sheetActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  skipButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+  },
+  skipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  sheetAddBtn: {
+    flex: 1,
+  },
+  // ────────────────────────────────────────────────────────────
 });
