@@ -221,22 +221,13 @@ export async function loadCatalogFromBackend(apiBase) {
     if (!res.ok) return;
     const catalog = await res.json();
 
-    const restaurants = catalog.map((r, index) => ({
-      id: r._id,
-      name: r.name,
-      cuisine: r.cuisine,
-      rating: r.rating,
-      deliveryTime: r.deliveryTime,
-      costForTwo: r.costForTwo,
-      address: r.address,
-      emoji: r.emoji,
-      location: locationForRestaurantName(r.name, index),
-    }));
-
     const dishesByName = new Map();
     const menuItems = [];
     catalog.forEach((restaurant) => {
       (restaurant.menuItems || []).forEach((item) => {
+        // Customer app only shows items currently live in dashboard.
+        if (!item.isDisplayed || item.isAvailable === false) return;
+
         const dishId = slugify(item.name);
         if (!dishesByName.has(dishId)) {
           dishesByName.set(dishId, { id: dishId, name: item.name, emoji: item.emoji });
@@ -248,9 +239,25 @@ export async function loadCatalogFromBackend(apiBase) {
           name: item.name,
           emoji: item.emoji,
           price: item.price,
+          isDisplayed: true,
         });
       });
     });
+
+    const liveRestaurantIds = new Set(menuItems.map((item) => item.restaurantId));
+    const restaurants = catalog
+      .filter((r) => liveRestaurantIds.has(r._id))
+      .map((r, index) => ({
+        id: r._id,
+        name: r.name,
+        cuisine: r.cuisine,
+        rating: r.rating,
+        deliveryTime: r.deliveryTime,
+        costForTwo: r.costForTwo,
+        address: r.address,
+        emoji: r.emoji,
+        location: locationForRestaurantName(r.name, index),
+      }));
 
     RESTAURANTS.length = 0;
     RESTAURANTS.push(...restaurants);

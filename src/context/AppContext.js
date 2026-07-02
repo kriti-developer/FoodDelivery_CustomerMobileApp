@@ -40,16 +40,27 @@ export function AppProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    const refreshCatalog = () => {
+      loadCatalogFromBackend(API_BASE).catch(() => {});
+    };
+
     fetch(`${API_BASE}/api/menu/displayed`)
       .then((res) => res.json())
-      .then((item) => setMenuItem(item))
+      .then((items) => {
+        const displayedItems = Array.isArray(items) ? items : items ? [items] : [];
+        setMenuItem(displayedItems[0] || null);
+      })
       .catch(() => {});
 
     const socket = io(API_BASE);
     socketRef.current = socket;
 
-    socket.on('menu:updated', (item) => {
-      setMenuItem(item);
+    socket.on('menu:updated', (payload) => {
+      const updatedItem = payload?.item || payload || null;
+      if (updatedItem) {
+        setMenuItem(updatedItem);
+      }
+      refreshCatalog();
     });
 
     socket.on('order:updated', (updatedOrder) => {

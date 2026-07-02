@@ -4,4 +4,4 @@
 //
 // Find your computer's LAN IP (Mac: System Settings > Wi-Fi > Details,
 // or run `ipconfig getifaddr en0` in a terminal) and put it below.
-export const API_BASE = "http://192.168.0.2:4000";
+export const API_BASE = "http://192.168.0.101:4000";
