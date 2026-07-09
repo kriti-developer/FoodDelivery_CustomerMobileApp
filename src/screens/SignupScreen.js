@@ -33,8 +33,11 @@ export default function SignupScreen({ navigation }) {
       return;
     }
     setSubmitting(true);
-    await signUp({ name, email, phone, address, password });
+    const result = await signUp({ name, email, phone, address, password });
     setSubmitting(false);
+    if (!result.success) {
+      Alert.alert('Sign up failed', result.message);
+    }
   };
 
   return (

@@ -1,7 +1,3 @@
-// Point this at the backend's LAN IP address - the same one you use for
-// the Expo URL (exp://<IP>:8081). It can't be "localhost" here, because
-// on a physical phone, "localhost" means the phone itself, not your computer.
-//
-// Find your computer's LAN IP (Mac: System Settings > Wi-Fi > Details,
-// or run `ipconfig getifaddr en0` in a terminal) and put it below.
-export const API_BASE = "http://192.168.0.101:4000";
+// Android emulator: use 10.0.2.2 to reach the backend running on your Mac.
+// Physical device: replace this with your Mac's LAN IP address.
+export const API_BASE = "http://10.0.2.2:4000";

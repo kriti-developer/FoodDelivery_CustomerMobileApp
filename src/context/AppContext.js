@@ -19,6 +19,7 @@ const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [authToken, setAuthToken] = useState(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
   // cart shape: { [itemId]: { quantity: number, note: string } }
@@ -30,11 +31,60 @@ export function AppProvider({ children }) {
   useEffect(() => {
     AsyncStorage.getItem(SESSION_KEY)
       .then((raw) => {
-        if (raw) setUser(JSON.parse(raw));
+        if (!raw) return;
+        const session = JSON.parse(raw);
+        setUser(session.user || null);
+        setAuthToken(session.token || null);
       })
       .finally(() => setIsRestoringSession(false));
   }, []);
 
+  useEffect(() => {
+    const migrateLegacySession = async () => {
+      const rawSession = await AsyncStorage.getItem(SESSION_KEY);
+      if (!rawSession) return;
+  
+      const session = JSON.parse(rawSession);
+      if (session?.token) return;
+  
+      const rawLegacyUser = await AsyncStorage.getItem(REGISTERED_USER_KEY);
+      if (!rawLegacyUser) return;
+  
+      const legacyUser = JSON.parse(rawLegacyUser);
+      if (!legacyUser?.email || !legacyUser?.password) return;
+  
+      const loginResponse = await fetch(`${API_BASE}/api/auth/customer-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: legacyUser.email, password: legacyUser.password }),
+      });
+  
+      if (loginResponse.ok) {
+        const data = await loginResponse.json();
+        await saveSession({ token: data.token, user: data.user });
+        return;
+      }
+  
+      const signupResponse = await fetch(`${API_BASE}/api/auth/customer-signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: legacyUser.name,
+          email: legacyUser.email,
+          phone: legacyUser.phone,
+          address: legacyUser.address,
+          password: legacyUser.password,
+        }),
+      });
+  
+      if (signupResponse.ok) {
+        const data = await signupResponse.json();
+        await saveSession({ token: data.token, user: data.user });
+      }
+    };
+  
+    migrateLegacySession().catch(() => {});
+  }, [saveSession]);
   useEffect(() => {
     loadCatalogFromBackend(API_BASE).finally(() => setIsLoadingCatalog(false));
   }, []);
@@ -72,59 +122,66 @@ export function AppProvider({ children }) {
     };
   }, []);
 
-  const signUp = useCallback(async ({ name, email, phone, address, password }) => {
-    const profile = { name, email, phone, address, password };
-    await AsyncStorage.setItem(REGISTERED_USER_KEY, JSON.stringify(profile));
-    const session = { name, email, phone, address };
+  const saveSession = useCallback(async ({ token, user: nextUser }) => {
+    const session = { token, user: nextUser };
     await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    setUser(session);
-    return { success: true };
+    setAuthToken(token);
+    setUser(nextUser);
+  }, []);
+
+  const signUp = useCallback(async ({ name, email, phone, address, password }) => {
+    try {
+      const profile = { name, email, phone, address, password };
+      await AsyncStorage.setItem(REGISTERED_USER_KEY, JSON.stringify(profile));
+      const res = await fetch(`${API_BASE}/api/auth/customer-signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, phone, address, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, message: data.error || 'Sign up failed.' };
+      }
+      await saveSession({ token: data.token, user: data.user });
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
   }, []);
 
   const login = useCallback(async ({ email, password }) => {
-    const raw = await AsyncStorage.getItem(REGISTERED_USER_KEY);
-    if (!raw) {
-      return { success: false, message: 'No account found. Please sign up first.' };
+    try {
+      const profile = { email, password };
+      await AsyncStorage.setItem(REGISTERED_USER_KEY, JSON.stringify(profile));
+      const res = await fetch(`${API_BASE}/api/auth/customer-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, message: data.error || 'Login failed.' };
+      }
+      await saveSession({ token: data.token, user: data.user });
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error.message };
     }
-    const registered = JSON.parse(raw);
-    if (registered.email.toLowerCase() !== email.trim().toLowerCase()) {
-      return { success: false, message: 'No account found with that email.' };
-    }
-    if (registered.password !== password) {
-      return { success: false, message: 'Incorrect password.' };
-    }
-    const session = {
-      name: registered.name,
-      email: registered.email,
-      phone: registered.phone,
-      address: registered.address,
-    };
-    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    setUser(session);
-    return { success: true };
-  }, []);
+  }, [saveSession]);
 
   const logout = useCallback(async () => {
     await AsyncStorage.removeItem(SESSION_KEY);
     setUser(null);
+    setAuthToken(null);
     setCart({});
     setOrder(null);
   }, []);
 
   const updateProfile = useCallback(async ({ name, email, phone, address }) => {
-    const session = { name, email, phone, address };
-    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    const raw = await AsyncStorage.getItem(REGISTERED_USER_KEY);
-    if (raw) {
-      const registered = JSON.parse(raw);
-      await AsyncStorage.setItem(
-        REGISTERED_USER_KEY,
-        JSON.stringify({ ...registered, name, email, phone, address })
-      );
-    }
-    setUser(session);
+    const nextUser = { ...(user || {}), name, email, phone, address };
+    await saveSession({ token: authToken, user: nextUser });
     return { success: true };
-  }, []);
+  }, [authToken, saveSession, user]);
 
   // Adds quantity to an item, optionally attaching/overwriting its note.
   const addToCart = useCallback((itemId, quantity = 1, note = '') => {
@@ -189,12 +246,17 @@ export function AppProvider({ children }) {
     if (cartCount === 0) {
       return { success: false, message: 'Your cart is empty.' };
     }
+    if (!authToken) {
+      return { success: false, message: 'Your session is missing. Please log out and log back in.' };
+    }
     try {
       const res = await fetch(`${API_BASE}/api/orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
         body: JSON.stringify({
-          customerName: user?.name || 'Guest',
           restaurantId: cartRestaurantId,
           items: cartItems.map(({ item, quantity, note }) => ({
             menuItem: item.id,
@@ -205,7 +267,10 @@ export function AppProvider({ children }) {
           })),
         }),
       });
-      if (!res.ok) throw new Error('Could not place your order. Please try again.');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not place your order. Please try again.');
+      }
       const created = await res.json();
       setOrder(created);
       clearCart();
@@ -213,7 +278,7 @@ export function AppProvider({ children }) {
     } catch (e) {
       return { success: false, message: e.message };
     }
-  }, [cartCount, cartItems, cartRestaurantId, clearCart, user]);
+  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart]);
 
   const resetOrder = useCallback(() => setOrder(null), []);
 
@@ -231,6 +296,7 @@ export function AppProvider({ children }) {
       cartCount,
       cartTotal,
       cartRestaurantId,
+      authToken,
       addToCart,
       replaceCart,
       setItemQuantity,
@@ -253,6 +319,7 @@ export function AppProvider({ children }) {
       cartCount,
       cartTotal,
       cartRestaurantId,
+      authToken,
       addToCart,
       replaceCart,
       setItemQuantity,
