@@ -37,3 +37,6 @@ yarn-error.*
 # Claude Code tooling (local-only, not part of the app)
 .claude/
 CLAUDE.md
+
+# IDE
+.idea/

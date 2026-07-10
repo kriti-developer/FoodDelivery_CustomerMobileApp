@@ -39,32 +39,39 @@ export function AppProvider({ children }) {
       .finally(() => setIsRestoringSession(false));
   }, []);
 
+  const saveSession = useCallback(async ({ token, user: nextUser }) => {
+    const session = { token, user: nextUser };
+    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    setAuthToken(token);
+    setUser(nextUser);
+  }, []);
+
   useEffect(() => {
     const migrateLegacySession = async () => {
       const rawSession = await AsyncStorage.getItem(SESSION_KEY);
       if (!rawSession) return;
-  
+
       const session = JSON.parse(rawSession);
       if (session?.token) return;
-  
+
       const rawLegacyUser = await AsyncStorage.getItem(REGISTERED_USER_KEY);
       if (!rawLegacyUser) return;
-  
+
       const legacyUser = JSON.parse(rawLegacyUser);
       if (!legacyUser?.email || !legacyUser?.password) return;
-  
+
       const loginResponse = await fetch(`${API_BASE}/api/auth/customer-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: legacyUser.email, password: legacyUser.password }),
       });
-  
+
       if (loginResponse.ok) {
         const data = await loginResponse.json();
         await saveSession({ token: data.token, user: data.user });
         return;
       }
-  
+
       const signupResponse = await fetch(`${API_BASE}/api/auth/customer-signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,15 +83,16 @@ export function AppProvider({ children }) {
           password: legacyUser.password,
         }),
       });
-  
+
       if (signupResponse.ok) {
         const data = await signupResponse.json();
         await saveSession({ token: data.token, user: data.user });
       }
     };
-  
+
     migrateLegacySession().catch(() => {});
   }, [saveSession]);
+
   useEffect(() => {
     loadCatalogFromBackend(API_BASE).finally(() => setIsLoadingCatalog(false));
   }, []);
@@ -122,13 +130,6 @@ export function AppProvider({ children }) {
     };
   }, []);
 
-  const saveSession = useCallback(async ({ token, user: nextUser }) => {
-    const session = { token, user: nextUser };
-    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    setAuthToken(token);
-    setUser(nextUser);
-  }, []);
-
   const signUp = useCallback(async ({ name, email, phone, address, password }) => {
     try {
       const profile = { name, email, phone, address, password };
@@ -147,7 +148,7 @@ export function AppProvider({ children }) {
     } catch (error) {
       return { success: false, message: error.message };
     }
-  }, []);
+  }, [saveSession]);
 
   const login = useCallback(async ({ email, password }) => {
     try {
