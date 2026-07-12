@@ -18,33 +18,12 @@ const REQUEST_TIMEOUT_MS = 4500;
 
 const AppContext = createContext(null);
 
-const buildLocalUser = ({ name, email, phone, address }) => ({
-  _id: `local-${email || 'user'}`,
-  name: name || 'Guest User',
-  email: email || '',
-  phone: phone || '',
-  address: address || '',
-  role: 'customer',
-  isLocalAuth: true,
-});
-
 function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...options, signal: controller.signal }).finally(() => {
     clearTimeout(timeoutId);
   });
-}
-
-function isNetworkError(error) {
-  if (!error) return false;
-  if (error.name === 'AbortError') return true;
-  const message = String(error.message || '').toLowerCase();
-  return (
-    message.includes('network request failed') ||
-    message.includes('failed to fetch') ||
-    message.includes('network')
-  );
 }
 
 export function AppProvider({ children }) {
@@ -164,9 +143,7 @@ export function AppProvider({ children }) {
   }, []);
 
   const signUp = useCallback(async ({ name, email, phone, address, password }) => {
-    const profile = { name, email, phone, address, password };
     try {
-      await AsyncStorage.setItem(REGISTERED_USER_KEY, JSON.stringify(profile));
       const res = await fetchWithTimeout(`${API_BASE}/api/auth/customer-signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -179,14 +156,7 @@ export function AppProvider({ children }) {
       await saveSession({ token: data.token, user: data.user });
       return { success: true };
     } catch (error) {
-      if (!isNetworkError(error)) {
-        return { success: false, message: error.message };
-      }
-      await saveSession({ token: 'local-dev-token', user: buildLocalUser(profile) });
-      return {
-        success: true,
-        message: 'Using offline mode. Backend is not reachable right now.',
-      };
+      return { success: false, message: 'Could not reach the backend. Is it running?' };
     }
   }, [saveSession]);
 
@@ -204,37 +174,7 @@ export function AppProvider({ children }) {
       await saveSession({ token: data.token, user: data.user });
       return { success: true };
     } catch (error) {
-      if (!isNetworkError(error)) {
-        return { success: false, message: error.message };
-      }
-      try {
-        const raw = await AsyncStorage.getItem(REGISTERED_USER_KEY);
-        if (!raw) {
-          return {
-            success: false,
-            message: 'Backend is offline and no local account exists yet. Please sign up first.',
-          };
-        }
-
-        const saved = JSON.parse(raw);
-        if (
-          saved?.email?.toLowerCase() !== email.trim().toLowerCase() ||
-          saved?.password !== password
-        ) {
-          return {
-            success: false,
-            message: 'Invalid email or password for local offline login.',
-          };
-        }
-
-        await saveSession({ token: 'local-dev-token', user: buildLocalUser(saved) });
-        return {
-          success: true,
-          message: 'Logged in with offline mode. Backend is not reachable right now.',
-        };
-      } catch {
-        return { success: false, message: error.message };
-      }
+      return { success: false, message: 'Could not reach the backend. Is it running?' };
     }
   }, [saveSession]);
 
@@ -326,7 +266,6 @@ export function AppProvider({ children }) {
           Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
-          customerName: user?.name,
           restaurantId: cartRestaurantId,
           items: cartItems.map(({ item, quantity, note }) => ({
             menuItem: item.id,
@@ -346,32 +285,9 @@ export function AppProvider({ children }) {
       clearCart();
       return { success: true };
     } catch (e) {
-      if (isNetworkError(e)) {
-        const now = new Date().toISOString();
-        const localOrder = {
-          _id: `offline-${Date.now()}`,
-          restaurant: cartRestaurantId ? { _id: cartRestaurantId } : null,
-          items: cartItems.map(({ item, quantity, note }) => ({
-            menuItem: item.id,
-            quantity,
-            price: item.price,
-            ...(note ? { note } : {}),
-          })),
-          status: 'pending',
-          createdAt: now,
-          updatedAt: now,
-          isOfflineOrder: true,
-        };
-        setOrder(localOrder);
-        clearCart();
-        return {
-          success: true,
-          message: 'Order saved offline. Backend is unreachable right now.',
-        };
-      }
       return { success: false, message: e.message };
     }
-  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, user]);
+  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart]);
 
   const resetOrder = useCallback(() => setOrder(null), []);
 
