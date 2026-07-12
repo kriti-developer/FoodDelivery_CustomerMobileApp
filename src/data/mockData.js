@@ -215,9 +215,13 @@ function slugify(name) {
 // of the hardcoded mock ones. Fails silently (keeping whatever was
 // already in these arrays) if the backend isn't reachable, same as the
 // rest of the app's "don't block on the backend" approach.
-export async function loadCatalogFromBackend(apiBase) {
+export async function loadCatalogFromBackend(apiBase, timeoutMs = 4500) {
   try {
-    const res = await fetch(`${apiBase}/api/catalog`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(`${apiBase}/api/catalog`, { signal: controller.signal }).finally(() => {
+      clearTimeout(timeoutId);
+    });
     if (!res.ok) return;
     const catalog = await res.json();
 

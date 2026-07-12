@@ -14,8 +14,38 @@ import { getMenuItemById, loadCatalogFromBackend } from '../data/mockData';
 
 const REGISTERED_USER_KEY = '@food_app/registeredUser';
 const SESSION_KEY = '@food_app/session';
+const REQUEST_TIMEOUT_MS = 4500;
 
 const AppContext = createContext(null);
+
+const buildLocalUser = ({ name, email, phone, address }) => ({
+  _id: `local-${email || 'user'}`,
+  name: name || 'Guest User',
+  email: email || '',
+  phone: phone || '',
+  address: address || '',
+  role: 'customer',
+  isLocalAuth: true,
+});
+
+function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
+
+function isNetworkError(error) {
+  if (!error) return false;
+  if (error.name === 'AbortError') return true;
+  const message = String(error.message || '').toLowerCase();
+  return (
+    message.includes('network request failed') ||
+    message.includes('failed to fetch') ||
+    message.includes('network')
+  );
+}
 
 export function AppProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -60,7 +90,7 @@ export function AppProvider({ children }) {
       const legacyUser = JSON.parse(rawLegacyUser);
       if (!legacyUser?.email || !legacyUser?.password) return;
 
-      const loginResponse = await fetch(`${API_BASE}/api/auth/customer-login`, {
+      const loginResponse = await fetchWithTimeout(`${API_BASE}/api/auth/customer-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: legacyUser.email, password: legacyUser.password }),
@@ -72,7 +102,7 @@ export function AppProvider({ children }) {
         return;
       }
 
-      const signupResponse = await fetch(`${API_BASE}/api/auth/customer-signup`, {
+      const signupResponse = await fetchWithTimeout(`${API_BASE}/api/auth/customer-signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -94,15 +124,15 @@ export function AppProvider({ children }) {
   }, [saveSession]);
 
   useEffect(() => {
-    loadCatalogFromBackend(API_BASE).finally(() => setIsLoadingCatalog(false));
+    loadCatalogFromBackend(API_BASE, REQUEST_TIMEOUT_MS).finally(() => setIsLoadingCatalog(false));
   }, []);
 
   useEffect(() => {
     const refreshCatalog = () => {
-      loadCatalogFromBackend(API_BASE).catch(() => {});
+      loadCatalogFromBackend(API_BASE, REQUEST_TIMEOUT_MS).catch(() => {});
     };
 
-    fetch(`${API_BASE}/api/menu/displayed`)
+    fetchWithTimeout(`${API_BASE}/api/menu/displayed`)
       .then((res) => res.json())
       .then((items) => {
         const displayedItems = Array.isArray(items) ? items : items ? [items] : [];
@@ -110,7 +140,10 @@ export function AppProvider({ children }) {
       })
       .catch(() => {});
 
-    const socket = io(API_BASE);
+    const socket = io(API_BASE, {
+      timeout: REQUEST_TIMEOUT_MS,
+      reconnectionAttempts: 2,
+    });
     socketRef.current = socket;
 
     socket.on('menu:updated', (payload) => {
@@ -131,10 +164,10 @@ export function AppProvider({ children }) {
   }, []);
 
   const signUp = useCallback(async ({ name, email, phone, address, password }) => {
+    const profile = { name, email, phone, address, password };
     try {
-      const profile = { name, email, phone, address, password };
       await AsyncStorage.setItem(REGISTERED_USER_KEY, JSON.stringify(profile));
-      const res = await fetch(`${API_BASE}/api/auth/customer-signup`, {
+      const res = await fetchWithTimeout(`${API_BASE}/api/auth/customer-signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, phone, address, password }),
@@ -146,15 +179,20 @@ export function AppProvider({ children }) {
       await saveSession({ token: data.token, user: data.user });
       return { success: true };
     } catch (error) {
-      return { success: false, message: error.message };
+      if (!isNetworkError(error)) {
+        return { success: false, message: error.message };
+      }
+      await saveSession({ token: 'local-dev-token', user: buildLocalUser(profile) });
+      return {
+        success: true,
+        message: 'Using offline mode. Backend is not reachable right now.',
+      };
     }
   }, [saveSession]);
 
   const login = useCallback(async ({ email, password }) => {
     try {
-      const profile = { email, password };
-      await AsyncStorage.setItem(REGISTERED_USER_KEY, JSON.stringify(profile));
-      const res = await fetch(`${API_BASE}/api/auth/customer-login`, {
+      const res = await fetchWithTimeout(`${API_BASE}/api/auth/customer-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -166,7 +204,37 @@ export function AppProvider({ children }) {
       await saveSession({ token: data.token, user: data.user });
       return { success: true };
     } catch (error) {
-      return { success: false, message: error.message };
+      if (!isNetworkError(error)) {
+        return { success: false, message: error.message };
+      }
+      try {
+        const raw = await AsyncStorage.getItem(REGISTERED_USER_KEY);
+        if (!raw) {
+          return {
+            success: false,
+            message: 'Backend is offline and no local account exists yet. Please sign up first.',
+          };
+        }
+
+        const saved = JSON.parse(raw);
+        if (
+          saved?.email?.toLowerCase() !== email.trim().toLowerCase() ||
+          saved?.password !== password
+        ) {
+          return {
+            success: false,
+            message: 'Invalid email or password for local offline login.',
+          };
+        }
+
+        await saveSession({ token: 'local-dev-token', user: buildLocalUser(saved) });
+        return {
+          success: true,
+          message: 'Logged in with offline mode. Backend is not reachable right now.',
+        };
+      } catch {
+        return { success: false, message: error.message };
+      }
     }
   }, [saveSession]);
 
@@ -251,13 +319,14 @@ export function AppProvider({ children }) {
       return { success: false, message: 'Your session is missing. Please log out and log back in.' };
     }
     try {
-      const res = await fetch(`${API_BASE}/api/orders`, {
+      const res = await fetchWithTimeout(`${API_BASE}/api/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
+          customerName: user?.name,
           restaurantId: cartRestaurantId,
           items: cartItems.map(({ item, quantity, note }) => ({
             menuItem: item.id,
@@ -277,9 +346,32 @@ export function AppProvider({ children }) {
       clearCart();
       return { success: true };
     } catch (e) {
+      if (isNetworkError(e)) {
+        const now = new Date().toISOString();
+        const localOrder = {
+          _id: `offline-${Date.now()}`,
+          restaurant: cartRestaurantId ? { _id: cartRestaurantId } : null,
+          items: cartItems.map(({ item, quantity, note }) => ({
+            menuItem: item.id,
+            quantity,
+            price: item.price,
+            ...(note ? { note } : {}),
+          })),
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+          isOfflineOrder: true,
+        };
+        setOrder(localOrder);
+        clearCart();
+        return {
+          success: true,
+          message: 'Order saved offline. Backend is unreachable right now.',
+        };
+      }
       return { success: false, message: e.message };
     }
-  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart]);
+  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, user]);
 
   const resetOrder = useCallback(() => setOrder(null), []);
 
