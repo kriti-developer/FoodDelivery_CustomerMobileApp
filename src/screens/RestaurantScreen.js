@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -24,9 +24,9 @@ const NOTE_MAX_LENGTH = 150;
 
 export default function RestaurantScreen({ route }) {
   const { restaurantId } = route.params;
-  const restaurant = getRestaurantById(restaurantId);
-  const menuItems = getMenuItemsByRestaurant(restaurantId);
-  const { cart, addToCart, replaceCart, setItemQuantity, cartRestaurantId } = useApp();
+  const { cart, addToCart, replaceCart, setItemQuantity, cartRestaurantId, catalogVersion } = useApp();
+  const restaurant = useMemo(() => getRestaurantById(restaurantId), [restaurantId, catalogVersion]);
+  const menuItems = useMemo(() => getMenuItemsByRestaurant(restaurantId), [restaurantId, catalogVersion]);
 
   // The item currently being customised (null = sheet closed)
   const [pendingItem, setPendingItem] = useState(null);

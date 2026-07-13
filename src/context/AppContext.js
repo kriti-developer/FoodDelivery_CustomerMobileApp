@@ -31,6 +31,7 @@ export function AppProvider({ children }) {
   const [authToken, setAuthToken] = useState(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [catalogVersion, setCatalogVersion] = useState(0);
   // cart shape: { [itemId]: { quantity: number, note: string } }
   const [cart, setCart] = useState({});
   const [order, setOrder] = useState(null);
@@ -103,13 +104,15 @@ export function AppProvider({ children }) {
   }, [saveSession]);
 
   useEffect(() => {
-    loadCatalogFromBackend(API_BASE, REQUEST_TIMEOUT_MS).finally(() => setIsLoadingCatalog(false));
+    loadCatalogFromBackend(API_BASE, REQUEST_TIMEOUT_MS).finally(() => {
+      setIsLoadingCatalog(false);
+      setCatalogVersion((v) => v + 1);
+    });
   }, []);
 
   useEffect(() => {
-    const refreshCatalog = () => {
+    const refreshCatalog = () =>
       loadCatalogFromBackend(API_BASE, REQUEST_TIMEOUT_MS).catch(() => {});
-    };
 
     fetchWithTimeout(`${API_BASE}/api/menu/displayed`)
       .then((res) => res.json())
@@ -130,7 +133,10 @@ export function AppProvider({ children }) {
       if (updatedItem) {
         setMenuItem(updatedItem);
       }
-      refreshCatalog();
+      // Reload catalog then bump version so all screens re-render immediately
+      loadCatalogFromBackend(API_BASE, REQUEST_TIMEOUT_MS)
+        .catch(() => {})
+        .finally(() => setCatalogVersion((v) => v + 1));
     });
 
     socket.on('order:updated', (updatedOrder) => {
@@ -296,6 +302,7 @@ export function AppProvider({ children }) {
       user,
       isRestoringSession,
       isLoadingCatalog,
+      catalogVersion,
       signUp,
       login,
       logout,
@@ -319,6 +326,7 @@ export function AppProvider({ children }) {
       user,
       isRestoringSession,
       isLoadingCatalog,
+      catalogVersion,
       signUp,
       login,
       logout,
