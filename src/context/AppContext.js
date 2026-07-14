@@ -125,7 +125,6 @@ export function AppProvider({ children }) {
 
     const socket = io(API_BASE, {
       timeout: REQUEST_TIMEOUT_MS,
-      reconnectionAttempts: 2,
     });
     socketRef.current = socket;
 
