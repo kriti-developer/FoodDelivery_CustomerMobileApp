@@ -49,8 +49,14 @@ export function AppProvider({ children }) {
   const [menuItem, setMenuItem] = useState(null);
   const [favoriteRestaurantIds, setFavoriteRestaurantIds] = useState([]);
   const [statusAlert, setStatusAlert] = useState(null);
+  const [scheduledOrders, setScheduledOrders] = useState([]);
   const socketRef = useRef(null);
   const statusAlertTimeoutRef = useRef(null);
+  const userIdRef = useRef(null);
+
+  useEffect(() => {
+    userIdRef.current = user?.id || user?._id || null;
+  }, [user]);
 
   const announceStatusChange = useCallback((status) => {
     const message = ORDER_STATUS_MESSAGES[status];
@@ -173,6 +179,18 @@ export function AppProvider({ children }) {
         }
         return updatedOrder;
       });
+    });
+
+    // Fires for every new order, including ones a scheduled "order ahead"
+    // just turned into a real order server-side with no action on this
+    // device - if it's ours, start tracking it live automatically.
+    socket.on('order:new', (newOrder) => {
+      if (userIdRef.current && newOrder.customerId === userIdRef.current) {
+        setOrder(newOrder);
+        setStatusAlert({ id: Date.now(), message: `Your scheduled order from ${newOrder.restaurant?.name || 'the restaurant'} has been placed!` });
+        if (statusAlertTimeoutRef.current) clearTimeout(statusAlertTimeoutRef.current);
+        statusAlertTimeoutRef.current = setTimeout(() => setStatusAlert(null), STATUS_ALERT_DURATION_MS);
+      }
     });
 
     return () => {
@@ -439,6 +457,99 @@ export function AppProvider({ children }) {
     }
   }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, fetchOrderHistory, logout]);
 
+  const fetchScheduledOrders = useCallback(async () => {
+    if (!authToken) {
+      setScheduledOrders([]);
+      return;
+    }
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/scheduled-orders/mine`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (res.status === 401) {
+        await logout();
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json();
+      setScheduledOrders(Array.isArray(data) ? data : []);
+    } catch {
+      // Keep whatever's already loaded if the backend is unreachable.
+    }
+  }, [authToken, logout]);
+
+  useEffect(() => {
+    fetchScheduledOrders();
+  }, [fetchScheduledOrders]);
+
+  // "Order Ahead": schedules the current cart for a future time instead of
+  // placing it now. The backend turns it into a real order automatically
+  // when it's due (see the order:new handler above for how it shows up here).
+  const scheduleOrder = useCallback(async (scheduledFor) => {
+    if (cartCount === 0) {
+      return { success: false, message: 'Your cart is empty.' };
+    }
+    if (!authToken) {
+      return { success: false, message: 'Your session is missing. Please log out and log back in.' };
+    }
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/scheduled-orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          restaurantId: cartRestaurantId,
+          items: cartItems.map(({ item, quantity, note }) => ({
+            menuItem: item.id,
+            quantity,
+            price: item.price,
+            ...(note ? { note } : {}),
+          })),
+          scheduledFor: new Date(scheduledFor).toISOString(),
+        }),
+      });
+      if (res.status === 401) {
+        await logout();
+        return { success: false, message: 'Your session has expired. Please log in again.' };
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not schedule your order. Please try again.');
+      }
+      clearCart();
+      fetchScheduledOrders();
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, fetchScheduledOrders, logout]);
+
+  const cancelScheduledOrder = useCallback(async (scheduledOrderId) => {
+    if (!authToken) {
+      return { success: false, message: 'Your session is missing. Please log out and log back in.' };
+    }
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/scheduled-orders/${scheduledOrderId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (res.status === 401) {
+        await logout();
+        return { success: false, message: 'Your session has expired. Please log in again.' };
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not cancel this scheduled order.');
+      }
+      fetchScheduledOrders();
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  }, [authToken, fetchScheduledOrders, logout]);
+
   const cancelOrder = useCallback(async (orderId) => {
     if (!authToken) {
       return { success: false, message: 'Your session is missing. Please log out and log back in.' };
@@ -526,6 +637,10 @@ export function AppProvider({ children }) {
       rateOrder,
       reorderOrder,
       resetOrder,
+      scheduledOrders,
+      fetchScheduledOrders,
+      scheduleOrder,
+      cancelScheduledOrder,
       favoriteRestaurantIds,
       isFavoriteRestaurant,
       toggleFavoriteRestaurant,
@@ -560,6 +675,10 @@ export function AppProvider({ children }) {
       rateOrder,
       reorderOrder,
       resetOrder,
+      scheduledOrders,
+      fetchScheduledOrders,
+      scheduleOrder,
+      cancelScheduledOrder,
       favoriteRestaurantIds,
       isFavoriteRestaurant,
       toggleFavoriteRestaurant,

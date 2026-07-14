@@ -1,5 +1,5 @@
-import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
@@ -7,16 +7,40 @@ import PrimaryButton from '../components/PrimaryButton';
 import QuantityStepper from '../components/QuantityStepper';
 import { colors } from '../theme/colors';
 
+// "Order Ahead" time slots, expressed as minutes from now. 0 means place
+// the order immediately.
+const SCHEDULE_SLOTS = [
+  { minutes: 0, label: 'Now' },
+  { minutes: 30, label: 'In 30 min' },
+  { minutes: 60, label: 'In 1 hour' },
+  { minutes: 120, label: 'In 2 hours' },
+];
+
 export default function CartScreen({ navigation }) {
-  const { user, cartItems, cartCount, cartTotal, setItemQuantity, placeOrder } = useApp();
+  const { user, cartItems, cartCount, cartTotal, setItemQuantity, placeOrder, scheduleOrder } = useApp();
   const insets = useSafeAreaInsets();
+  const [scheduleMinutes, setScheduleMinutes] = useState(0);
 
   const handlePlaceOrder = async () => {
-    const result = await placeOrder();
+    if (scheduleMinutes === 0) {
+      const result = await placeOrder();
+      if (result.success) {
+        navigation.navigate('Orders');
+      } else {
+        Alert.alert('Could not place order', result.message);
+      }
+      return;
+    }
+
+    const scheduledFor = Date.now() + scheduleMinutes * 60 * 1000;
+    const result = await scheduleOrder(scheduledFor);
     if (result.success) {
+      const time = new Date(scheduledFor).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setScheduleMinutes(0);
+      Alert.alert('Order scheduled!', `We'll place your order automatically around ${time}.`);
       navigation.navigate('Orders');
     } else {
-      Alert.alert('Could not place order', result.message);
+      Alert.alert('Could not schedule order', result.message);
     }
   };
 
@@ -65,6 +89,26 @@ export default function CartScreen({ navigation }) {
 
         <View style={styles.divider} />
 
+        <Text style={styles.sectionTitle}>When would you like this?</Text>
+        <View style={styles.scheduleRow}>
+          {SCHEDULE_SLOTS.map((slot) => {
+            const isActive = scheduleMinutes === slot.minutes;
+            return (
+              <TouchableOpacity
+                key={slot.minutes}
+                style={[styles.scheduleChip, isActive && styles.scheduleChipActive]}
+                onPress={() => setScheduleMinutes(slot.minutes)}
+              >
+                <Text style={[styles.scheduleChipText, isActive && styles.scheduleChipTextActive]}>
+                  {slot.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <View style={styles.divider} />
+
         <Text style={styles.sectionTitle}>Delivery Address</Text>
         <Text style={styles.address}>{user?.address || 'No address on file'}</Text>
 
@@ -86,7 +130,10 @@ export default function CartScreen({ navigation }) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <PrimaryButton title="Place Order" onPress={handlePlaceOrder} />
+        <PrimaryButton
+          title={scheduleMinutes === 0 ? 'Place Order' : 'Schedule Order'}
+          onPress={handlePlaceOrder}
+        />
       </View>
     </View>
   );
@@ -165,6 +212,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
     lineHeight: 20,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  scheduleChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  scheduleChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  scheduleChipText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  scheduleChipTextActive: {
+    color: '#fff',
   },
   summaryRow: {
     flexDirection: 'row',

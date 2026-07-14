@@ -44,14 +44,90 @@ const STATUS_TO_STAGE_INDEX = {
 const OUT_FOR_DELIVERY_INDEX = ORDER_STAGES.findIndex((stage) => stage.key === 'out_for_delivery');
 
 export default function OrdersScreen({ navigation }) {
-  const { order, resetOrder, orderHistory, fetchOrderHistory, reorderOrder, cancelOrder, rateOrder } = useApp();
+  const {
+    order,
+    resetOrder,
+    orderHistory,
+    fetchOrderHistory,
+    reorderOrder,
+    cancelOrder,
+    rateOrder,
+    scheduledOrders,
+    fetchScheduledOrders,
+    cancelScheduledOrder,
+  } = useApp();
   const insets = useSafeAreaInsets();
   const [now, setNow] = useState(Date.now());
   const [rating, setRating] = useState(0);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [cancellingScheduledId, setCancellingScheduledId] = useState(null);
   const scrollViewRef = useRef(null);
   const alreadyRated = Boolean(order?.rating);
+
+  const handleCancelScheduledOrder = (scheduledOrderId) => {
+    Alert.alert(
+      'Cancel this scheduled order?',
+      "It won't be placed automatically.",
+      [
+        { text: 'Keep It', style: 'cancel' },
+        {
+          text: 'Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            setCancellingScheduledId(scheduledOrderId);
+            const result = await cancelScheduledOrder(scheduledOrderId);
+            setCancellingScheduledId(null);
+            if (!result.success) {
+              Alert.alert('Could not cancel', result.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderScheduledOrders = () => {
+    if (scheduledOrders.length === 0) return null;
+    return (
+      <View style={styles.scheduledSection}>
+        <Text style={styles.heading}>Scheduled Orders</Text>
+        {scheduledOrders.map((scheduled) => {
+          const itemCount = (scheduled.items || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+          return (
+            <View key={scheduled._id} style={styles.scheduledCard}>
+              <View style={styles.historyCardTop}>
+                <Text style={styles.historyRestaurant}>{scheduled.restaurant?.name || 'Restaurant'}</Text>
+                <View style={styles.scheduledBadge}>
+                  <Ionicons name="time-outline" size={12} color="#fff" />
+                  <Text style={styles.scheduledBadgeText}>
+                    {new Date(scheduled.scheduledFor).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.historyMeta}>
+                {itemCount} item{itemCount === 1 ? '' : 's'}
+              </Text>
+              <TouchableOpacity
+                style={styles.cancelScheduledButton}
+                disabled={cancellingScheduledId === scheduled._id}
+                onPress={() => handleCancelScheduledOrder(scheduled._id)}
+              >
+                <Text style={styles.cancelScheduledButtonText}>
+                  {cancellingScheduledId === scheduled._id ? 'Cancelling…' : 'Cancel'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
 
   const handleReorder = (pastOrder) => {
     const { addedCount, skippedNames } = reorderOrder(pastOrder);
@@ -93,7 +169,8 @@ export default function OrdersScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       fetchOrderHistory();
-    }, [fetchOrderHistory])
+      fetchScheduledOrders();
+    }, [fetchOrderHistory, fetchScheduledOrders])
   );
 
   useEffect(() => {
@@ -133,15 +210,22 @@ export default function OrdersScreen({ navigation }) {
 
   if (!order) {
     if (orderHistory.length === 0) {
-      return (
-        <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
-          <Ionicons name="receipt-outline" size={64} color={colors.border} />
-          <Text style={styles.emptyTitle}>No orders yet</Text>
-          <Text style={styles.emptySubtitle}>Place an order to see its live status here.</Text>
-          <View style={styles.emptyButtonWrap}>
-            <PrimaryButton title="Browse Menu" onPress={() => navigation.navigate('Home')} />
+      if (scheduledOrders.length === 0) {
+        return (
+          <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
+            <Ionicons name="receipt-outline" size={64} color={colors.border} />
+            <Text style={styles.emptyTitle}>No orders yet</Text>
+            <Text style={styles.emptySubtitle}>Place an order to see its live status here.</Text>
+            <View style={styles.emptyButtonWrap}>
+              <PrimaryButton title="Browse Menu" onPress={() => navigation.navigate('Home')} />
+            </View>
           </View>
-        </View>
+        );
+      }
+      return (
+        <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
+          {renderScheduledOrders()}
+        </ScrollView>
       );
     }
 
@@ -150,7 +234,12 @@ export default function OrdersScreen({ navigation }) {
         contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
         data={orderHistory}
         keyExtractor={(item) => item._id}
-        ListHeaderComponent={<Text style={styles.heading}>Past Orders</Text>}
+        ListHeaderComponent={
+          <>
+            {renderScheduledOrders()}
+            <Text style={styles.heading}>Past Orders</Text>
+          </>
+        }
         renderItem={({ item }) => {
           const itemCount = (item.items || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
           return (
@@ -664,6 +753,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 2,
     marginTop: 6,
+  },
+  scheduledSection: {
+    marginBottom: 8,
+  },
+  scheduledCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  scheduledBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  scheduledBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  cancelScheduledButton: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: colors.danger,
+  },
+  cancelScheduledButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.danger,
   },
   reorderButton: {
     flexDirection: 'row',
