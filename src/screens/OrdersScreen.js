@@ -34,6 +34,7 @@ const STATUS_TO_STAGE_INDEX = {
   pending: 0,
   confirmed: 1,
   preparing: 1,
+  ready: 1,          // food is packed but rider not yet picked up — still stage 1
   'on-the-way': 2,
   delivered: 3,
 };

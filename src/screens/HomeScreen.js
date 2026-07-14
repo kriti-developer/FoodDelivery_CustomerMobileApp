@@ -22,15 +22,15 @@ const SORT_OPTIONS = [
 ];
 
 export default function HomeScreen({ navigation }) {
-  const { user } = useApp();
+  const { user, catalogVersion } = useApp();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState(null);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
-  const topRated = useMemo(() => getTopRatedRestaurants(4), []);
-  const sortedRestaurants = useMemo(() => sortRestaurants(RESTAURANTS, sortBy), [sortBy]);
-  const searchResults = useMemo(() => searchCatalog(query), [query]);
+  const topRated = useMemo(() => getTopRatedRestaurants(4), [catalogVersion]);
+  const sortedRestaurants = useMemo(() => sortRestaurants(RESTAURANTS, sortBy), [sortBy, catalogVersion]);
+  const searchResults = useMemo(() => searchCatalog(query), [query, catalogVersion]);
   const isSearching = query.trim().length > 0;
   const hasResults = searchResults.restaurants.length > 0 || searchResults.dishes.length > 0;
 
