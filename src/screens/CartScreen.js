@@ -7,22 +7,33 @@ import PrimaryButton from '../components/PrimaryButton';
 import QuantityStepper from '../components/QuantityStepper';
 import { colors } from '../theme/colors';
 
-// "Order Ahead" time slots, expressed as minutes from now. 0 means place
-// the order immediately.
-const SCHEDULE_SLOTS = [
-  { minutes: 0, label: 'Now' },
-  { minutes: 30, label: 'In 30 min' },
-  { minutes: 60, label: 'In 1 hour' },
-  { minutes: 120, label: 'In 2 hours' },
-];
+// "Order Ahead" lets a customer pick any time up to 3 hours out, in
+// 15-minute steps, instead of only placing the order immediately.
+const SCHEDULE_STEP_MINUTES = 15;
+const MIN_SCHEDULE_MINUTES = 15;
+const MAX_SCHEDULE_MINUTES = 180;
+
+function formatDuration(minutes) {
+  const hrs = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hrs === 0) return `${mins} min`;
+  if (mins === 0) return `${hrs} hr`;
+  return `${hrs} hr ${mins} min`;
+}
 
 export default function CartScreen({ navigation }) {
   const { user, cartItems, cartCount, cartTotal, setItemQuantity, placeOrder, scheduleOrder } = useApp();
   const insets = useSafeAreaInsets();
-  const [scheduleMinutes, setScheduleMinutes] = useState(0);
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [scheduleMinutes, setScheduleMinutes] = useState(30);
+
+  const scheduledClockTime = new Date(Date.now() + scheduleMinutes * 60 * 1000).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   const handlePlaceOrder = async () => {
-    if (scheduleMinutes === 0) {
+    if (!isScheduling) {
       const result = await placeOrder();
       if (result.success) {
         navigation.navigate('Orders');
@@ -36,7 +47,7 @@ export default function CartScreen({ navigation }) {
     const result = await scheduleOrder(scheduledFor);
     if (result.success) {
       const time = new Date(scheduledFor).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setScheduleMinutes(0);
+      setIsScheduling(false);
       Alert.alert('Order scheduled!', `We'll place your order automatically around ${time}.`);
       navigation.navigate('Orders');
     } else {
@@ -91,21 +102,38 @@ export default function CartScreen({ navigation }) {
 
         <Text style={styles.sectionTitle}>When would you like this?</Text>
         <View style={styles.scheduleRow}>
-          {SCHEDULE_SLOTS.map((slot) => {
-            const isActive = scheduleMinutes === slot.minutes;
-            return (
-              <TouchableOpacity
-                key={slot.minutes}
-                style={[styles.scheduleChip, isActive && styles.scheduleChipActive]}
-                onPress={() => setScheduleMinutes(slot.minutes)}
-              >
-                <Text style={[styles.scheduleChipText, isActive && styles.scheduleChipTextActive]}>
-                  {slot.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          <TouchableOpacity
+            style={[styles.scheduleChip, !isScheduling && styles.scheduleChipActive]}
+            onPress={() => setIsScheduling(false)}
+          >
+            <Text style={[styles.scheduleChipText, !isScheduling && styles.scheduleChipTextActive]}>Now</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.scheduleChip, isScheduling && styles.scheduleChipActive]}
+            onPress={() => setIsScheduling(true)}
+          >
+            <Text style={[styles.scheduleChipText, isScheduling && styles.scheduleChipTextActive]}>
+              Schedule for later
+            </Text>
+          </TouchableOpacity>
         </View>
+
+        {isScheduling && (
+          <View style={styles.scheduleStepperCard}>
+            <QuantityStepper
+              quantity={formatDuration(scheduleMinutes)}
+              onDecrease={() =>
+                setScheduleMinutes((m) => Math.max(MIN_SCHEDULE_MINUTES, m - SCHEDULE_STEP_MINUTES))
+              }
+              onIncrease={() =>
+                setScheduleMinutes((m) => Math.min(MAX_SCHEDULE_MINUTES, m + SCHEDULE_STEP_MINUTES))
+              }
+            />
+            <Text style={styles.scheduleTimeText}>
+              We'll place your order around {scheduledClockTime}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.divider} />
 
@@ -131,7 +159,7 @@ export default function CartScreen({ navigation }) {
 
       <View style={styles.footer}>
         <PrimaryButton
-          title={scheduleMinutes === 0 ? 'Place Order' : 'Schedule Order'}
+          title={isScheduling ? 'Schedule Order' : 'Place Order'}
           onPress={handlePlaceOrder}
         />
       </View>
@@ -237,6 +265,21 @@ const styles = StyleSheet.create({
   },
   scheduleChipTextActive: {
     color: '#fff',
+  },
+  scheduleStepperCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+    gap: 12,
+  },
+  scheduleTimeText: {
+    flex: 1,
+    fontSize: 12.5,
+    color: colors.textMuted,
   },
   summaryRow: {
     flexDirection: 'row',
