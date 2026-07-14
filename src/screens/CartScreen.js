@@ -1,36 +1,42 @@
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
 import QuantityStepper from '../components/QuantityStepper';
 import { colors } from '../theme/colors';
 
-// "Order Ahead" lets a customer pick any time up to 3 hours out, in
-// 15-minute steps, instead of only placing the order immediately.
-const SCHEDULE_STEP_MINUTES = 15;
-const MIN_SCHEDULE_MINUTES = 15;
-const MAX_SCHEDULE_MINUTES = 180;
+// "Order Ahead" lets a customer pick an exact time up to 3 hours out,
+// instead of only placing the order immediately.
+const MIN_SCHEDULE_MS = 15 * 60 * 1000;
+const MAX_SCHEDULE_MS = 3 * 60 * 60 * 1000;
 
-function formatDuration(minutes) {
-  const hrs = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hrs === 0) return `${mins} min`;
-  if (mins === 0) return `${hrs} hr`;
-  return `${hrs} hr ${mins} min`;
+function defaultScheduledDate() {
+  return new Date(Date.now() + 30 * 60 * 1000);
 }
 
 export default function CartScreen({ navigation }) {
   const { user, cartItems, cartCount, cartTotal, setItemQuantity, placeOrder, scheduleOrder } = useApp();
   const insets = useSafeAreaInsets();
   const [isScheduling, setIsScheduling] = useState(false);
-  const [scheduleMinutes, setScheduleMinutes] = useState(30);
+  const [scheduledDate, setScheduledDate] = useState(defaultScheduledDate);
+  const [showPicker, setShowPicker] = useState(false);
 
-  const scheduledClockTime = new Date(Date.now() + scheduleMinutes * 60 * 1000).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const handleTimeChange = (event, picked) => {
+    setShowPicker(Platform.OS === 'ios');
+    if (event.type === 'dismissed' || !picked) return;
+
+    // mode="time" only carries the time-of-day - if that time already
+    // passed today, the customer must mean the same time tomorrow.
+    const next = new Date();
+    next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+    if (next.getTime() <= Date.now()) {
+      next.setDate(next.getDate() + 1);
+    }
+    setScheduledDate(next);
+  };
 
   const handlePlaceOrder = async () => {
     if (!isScheduling) {
@@ -43,11 +49,17 @@ export default function CartScreen({ navigation }) {
       return;
     }
 
-    const scheduledFor = Date.now() + scheduleMinutes * 60 * 1000;
-    const result = await scheduleOrder(scheduledFor);
+    const leadMs = scheduledDate.getTime() - Date.now();
+    if (leadMs < MIN_SCHEDULE_MS || leadMs > MAX_SCHEDULE_MS) {
+      Alert.alert('Pick a valid time', 'Scheduled orders must be between 15 minutes and 3 hours from now.');
+      return;
+    }
+
+    const result = await scheduleOrder(scheduledDate.getTime());
     if (result.success) {
-      const time = new Date(scheduledFor).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const time = scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setIsScheduling(false);
+      setScheduledDate(defaultScheduledDate());
       Alert.alert('Order scheduled!', `We'll place your order automatically around ${time}.`);
       navigation.navigate('Orders');
     } else {
@@ -120,19 +132,25 @@ export default function CartScreen({ navigation }) {
 
         {isScheduling && (
           <View style={styles.scheduleStepperCard}>
-            <QuantityStepper
-              quantity={formatDuration(scheduleMinutes)}
-              onDecrease={() =>
-                setScheduleMinutes((m) => Math.max(MIN_SCHEDULE_MINUTES, m - SCHEDULE_STEP_MINUTES))
-              }
-              onIncrease={() =>
-                setScheduleMinutes((m) => Math.min(MAX_SCHEDULE_MINUTES, m + SCHEDULE_STEP_MINUTES))
-              }
-            />
-            <Text style={styles.scheduleTimeText}>
-              We'll place your order around {scheduledClockTime}
-            </Text>
+            <TouchableOpacity style={styles.timePickerButton} onPress={() => setShowPicker(true)}>
+              <Ionicons name="time-outline" size={18} color={colors.primary} />
+              <Text style={styles.timePickerButtonText}>
+                {scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.scheduleTimeText}>Must be within 3 hours from now</Text>
           </View>
+        )}
+
+        {showPicker && (
+          <DateTimePicker
+            value={scheduledDate}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            minimumDate={new Date(Date.now() + MIN_SCHEDULE_MS)}
+            maximumDate={new Date(Date.now() + MAX_SCHEDULE_MS)}
+            onChange={handleTimeChange}
+          />
         )}
 
         <View style={styles.divider} />
@@ -267,17 +285,29 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   scheduleStepperCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     backgroundColor: colors.card,
     borderRadius: 14,
     padding: 14,
     marginTop: 12,
-    gap: 12,
+    gap: 10,
+  },
+  timePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  timePickerButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.primary,
   },
   scheduleTimeText: {
-    flex: 1,
     fontSize: 12.5,
     color: colors.textMuted,
   },
