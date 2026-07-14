@@ -202,13 +202,17 @@ export function AppProvider({ children }) {
       const res = await fetchWithTimeout(`${API_BASE}/api/orders/mine`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
+      if (res.status === 401) {
+        await logout();
+        return;
+      }
       if (!res.ok) return;
       const data = await res.json();
       setOrderHistory(Array.isArray(data) ? data : []);
     } catch {
       // Keep whatever history is already loaded if the backend is unreachable.
     }
-  }, [authToken]);
+  }, [authToken, logout]);
 
   useEffect(() => {
     fetchOrderHistory();
@@ -304,6 +308,10 @@ export function AppProvider({ children }) {
           })),
         }),
       });
+      if (res.status === 401) {
+        await logout();
+        return { success: false, message: 'Your session has expired. Please log in again.' };
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Could not place your order. Please try again.');
@@ -316,7 +324,7 @@ export function AppProvider({ children }) {
     } catch (e) {
       return { success: false, message: e.message };
     }
-  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, fetchOrderHistory]);
+  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, fetchOrderHistory, logout]);
 
   const resetOrder = useCallback(() => setOrder(null), []);
 
