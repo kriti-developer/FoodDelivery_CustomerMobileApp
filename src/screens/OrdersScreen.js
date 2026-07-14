@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { FlatList, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline } from 'react-native-maps';
@@ -13,6 +14,15 @@ import {
 import { useApp } from '../context/AppContext';
 import PrimaryButton from '../components/PrimaryButton';
 import { colors } from '../theme/colors';
+
+const STATUS_LABELS = {
+  pending: 'Placed',
+  confirmed: 'Confirmed',
+  preparing: 'Preparing',
+  'on-the-way': 'Out for delivery',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
+};
 
 // Driven by the order's real status now (pending/confirmed/preparing/
 // on-the-way/delivered), pushed live via the order:updated socket event in
@@ -30,11 +40,17 @@ const STATUS_TO_STAGE_INDEX = {
 const OUT_FOR_DELIVERY_INDEX = ORDER_STAGES.findIndex((stage) => stage.key === 'out_for_delivery');
 
 export default function OrdersScreen({ navigation }) {
-  const { order, resetOrder } = useApp();
+  const { order, resetOrder, orderHistory, fetchOrderHistory } = useApp();
   const insets = useSafeAreaInsets();
   const [now, setNow] = useState(Date.now());
   const [rating, setRating] = useState(0);
   const scrollViewRef = useRef(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrderHistory();
+    }, [fetchOrderHistory])
+  );
 
   useEffect(() => {
     if (!order) return;
@@ -59,15 +75,48 @@ export default function OrdersScreen({ navigation }) {
   }, [isDelivered]);
 
   if (!order) {
-    return (
-      <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
-        <Ionicons name="receipt-outline" size={64} color={colors.border} />
-        <Text style={styles.emptyTitle}>No active orders</Text>
-        <Text style={styles.emptySubtitle}>Place an order to see its live status here.</Text>
-        <View style={styles.emptyButtonWrap}>
-          <PrimaryButton title="Browse Menu" onPress={() => navigation.navigate('Home')} />
+    if (orderHistory.length === 0) {
+      return (
+        <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
+          <Ionicons name="receipt-outline" size={64} color={colors.border} />
+          <Text style={styles.emptyTitle}>No orders yet</Text>
+          <Text style={styles.emptySubtitle}>Place an order to see its live status here.</Text>
+          <View style={styles.emptyButtonWrap}>
+            <PrimaryButton title="Browse Menu" onPress={() => navigation.navigate('Home')} />
+          </View>
         </View>
-      </View>
+      );
+    }
+
+    return (
+      <FlatList
+        contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+        data={orderHistory}
+        keyExtractor={(item) => item._id}
+        ListHeaderComponent={<Text style={styles.heading}>Past Orders</Text>}
+        renderItem={({ item }) => {
+          const itemCount = (item.items || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+          return (
+            <View style={styles.historyCard}>
+              <View style={styles.historyCardTop}>
+                <Text style={styles.historyRestaurant}>{item.restaurant?.name || 'Restaurant'}</Text>
+                <Text style={styles.historyStatus}>{STATUS_LABELS[item.status] || item.status}</Text>
+              </View>
+              <Text style={styles.historyMeta}>
+                {new Date(item.createdAt).toLocaleString([], {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                {' · '}
+                {itemCount} item{itemCount === 1 ? '' : 's'}
+              </Text>
+              <Text style={styles.historyTotal}>₹{item.totalPrice}</Text>
+            </View>
+          );
+        }}
+      />
     );
   }
 
@@ -459,5 +508,37 @@ const styles = StyleSheet.create({
   emptyButtonWrap: {
     marginTop: 24,
     width: '100%',
+  },
+  historyCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  historyCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  historyRestaurant: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  historyStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  historyMeta: {
+    fontSize: 12.5,
+    color: colors.textMuted,
+    marginTop: 6,
+  },
+  historyTotal: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: 8,
   },
 });

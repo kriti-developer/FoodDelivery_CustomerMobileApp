@@ -34,6 +34,7 @@ export function AppProvider({ children }) {
   // cart shape: { [itemId]: { quantity: number, note: string } }
   const [cart, setCart] = useState({});
   const [order, setOrder] = useState(null);
+  const [orderHistory, setOrderHistory] = useState([]);
   const [menuItem, setMenuItem] = useState(null);
   const socketRef = useRef(null);
 
@@ -184,7 +185,29 @@ export function AppProvider({ children }) {
     setAuthToken(null);
     setCart({});
     setOrder(null);
+    setOrderHistory([]);
   }, []);
+
+  const fetchOrderHistory = useCallback(async () => {
+    if (!authToken) {
+      setOrderHistory([]);
+      return;
+    }
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/orders/mine`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setOrderHistory(Array.isArray(data) ? data : []);
+    } catch {
+      // Keep whatever history is already loaded if the backend is unreachable.
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    fetchOrderHistory();
+  }, [fetchOrderHistory]);
 
   const updateProfile = useCallback(async ({ name, email, phone, address }) => {
     const nextUser = { ...(user || {}), name, email, phone, address };
@@ -283,11 +306,12 @@ export function AppProvider({ children }) {
       const created = await res.json();
       setOrder(created);
       clearCart();
+      fetchOrderHistory();
       return { success: true };
     } catch (e) {
       return { success: false, message: e.message };
     }
-  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart]);
+  }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, fetchOrderHistory]);
 
   const resetOrder = useCallback(() => setOrder(null), []);
 
@@ -312,6 +336,8 @@ export function AppProvider({ children }) {
       clearCart,
       menuItem,
       order,
+      orderHistory,
+      fetchOrderHistory,
       placeOrder,
       resetOrder,
     }),
@@ -335,6 +361,8 @@ export function AppProvider({ children }) {
       clearCart,
       menuItem,
       order,
+      orderHistory,
+      fetchOrderHistory,
       placeOrder,
       resetOrder,
     ]
