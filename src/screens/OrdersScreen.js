@@ -44,12 +44,14 @@ const STATUS_TO_STAGE_INDEX = {
 const OUT_FOR_DELIVERY_INDEX = ORDER_STAGES.findIndex((stage) => stage.key === 'out_for_delivery');
 
 export default function OrdersScreen({ navigation }) {
-  const { order, resetOrder, orderHistory, fetchOrderHistory, reorderOrder, cancelOrder } = useApp();
+  const { order, resetOrder, orderHistory, fetchOrderHistory, reorderOrder, cancelOrder, rateOrder } = useApp();
   const insets = useSafeAreaInsets();
   const [now, setNow] = useState(Date.now());
   const [rating, setRating] = useState(0);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const scrollViewRef = useRef(null);
+  const alreadyRated = Boolean(order?.rating);
 
   const handleReorder = (pastOrder) => {
     const { addedCount, skippedNames } = reorderOrder(pastOrder);
@@ -96,8 +98,21 @@ export default function OrdersScreen({ navigation }) {
 
   useEffect(() => {
     if (!order) return;
-    setRating(0);
-  }, [order?._id]);
+    setRating(order.rating || 0);
+  }, [order?._id, order?.rating]);
+
+  const handleSubmitRating = async () => {
+    if (rating === 0) {
+      resetOrder();
+      return;
+    }
+    setIsSubmittingRating(true);
+    const result = await rateOrder(order._id, rating);
+    setIsSubmittingRating(false);
+    if (!result.success) {
+      Alert.alert('Could not submit rating', result.message);
+    }
+  };
 
   const stageIndex = order ? STATUS_TO_STAGE_INDEX[order.status] ?? 0 : 0;
   const isDelivered = stageIndex >= ORDER_STAGES.length - 1;
@@ -155,6 +170,18 @@ export default function OrdersScreen({ navigation }) {
                 {itemCount} item{itemCount === 1 ? '' : 's'}
               </Text>
               <Text style={styles.historyTotal}>₹{item.totalPrice}</Text>
+              {item.rating ? (
+                <View style={styles.historyRatingRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Ionicons
+                      key={star}
+                      name={star <= item.rating ? 'star' : 'star-outline'}
+                      size={13}
+                      color={colors.warning}
+                    />
+                  ))}
+                </View>
+              ) : null}
               <TouchableOpacity style={styles.reorderButton} onPress={() => handleReorder(item)}>
                 <Ionicons name="repeat" size={15} color={colors.primary} />
                 <Text style={styles.reorderButtonText}>Reorder</Text>
@@ -345,7 +372,11 @@ export default function OrdersScreen({ navigation }) {
             <Text style={styles.rateTitle}>Rate your delivery partner</Text>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                <TouchableOpacity
+                  key={star}
+                  disabled={alreadyRated || isSubmittingRating}
+                  onPress={() => setRating(star)}
+                >
                   <Ionicons
                     name={star <= rating ? 'star' : 'star-outline'}
                     size={32}
@@ -355,11 +386,20 @@ export default function OrdersScreen({ navigation }) {
                 </TouchableOpacity>
               ))}
             </View>
+            {alreadyRated && <Text style={styles.rateThanks}>Thanks for rating! 🙌</Text>}
           </View>
 
           <PrimaryButton
-            title={rating > 0 ? 'Submit Rating' : 'Done'}
-            onPress={resetOrder}
+            title={
+              alreadyRated
+                ? 'Done'
+                : isSubmittingRating
+                ? 'Submitting…'
+                : rating > 0
+                ? 'Submit Rating'
+                : 'Done'
+            }
+            onPress={alreadyRated ? resetOrder : handleSubmitRating}
           />
         </View>
       )}
@@ -559,6 +599,12 @@ const styles = StyleSheet.create({
   starIcon: {
     marginHorizontal: 4,
   },
+  rateThanks: {
+    fontSize: 13,
+    color: colors.secondary,
+    fontWeight: '600',
+    marginTop: 10,
+  },
   emptyContainer: {
     flex: 1,
     backgroundColor: colors.background,
@@ -613,6 +659,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     marginTop: 8,
+  },
+  historyRatingRow: {
+    flexDirection: 'row',
+    gap: 2,
+    marginTop: 6,
   },
   reorderButton: {
     flexDirection: 'row',

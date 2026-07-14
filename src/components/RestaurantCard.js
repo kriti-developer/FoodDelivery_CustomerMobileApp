@@ -4,13 +4,25 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
 export default function RestaurantCard({ restaurant, onPress, isFavorite, onToggleFavorite }) {
+  const isClosed = restaurant.isOpen === false;
   return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={onPress}>
+    <TouchableOpacity
+      style={[styles.card, isClosed && styles.cardClosed]}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
       <View style={styles.emojiWrap}>
         <Text style={styles.emoji}>{restaurant.emoji}</Text>
       </View>
       <View style={styles.info}>
-        <Text style={styles.name}>{restaurant.name}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name}>{restaurant.name}</Text>
+          {isClosed && (
+            <View style={styles.closedBadge}>
+              <Text style={styles.closedBadgeText}>Closed</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.cuisine}>{restaurant.cuisine}</Text>
         <View style={styles.metaRow}>
           <Ionicons name="star" size={13} color={colors.warning} />
@@ -64,13 +76,32 @@ const styles = StyleSheet.create({
   emoji: {
     fontSize: 26,
   },
+  cardClosed: {
+    opacity: 0.6,
+  },
   info: {
     flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   name: {
     fontSize: 16,
     fontWeight: '700',
     color: colors.text,
+  },
+  closedBadge: {
+    backgroundColor: colors.danger,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  closedBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
   },
   cuisine: {
     fontSize: 12.5,

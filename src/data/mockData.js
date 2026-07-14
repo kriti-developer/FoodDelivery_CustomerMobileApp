@@ -260,6 +260,7 @@ export async function loadCatalogFromBackend(apiBase, timeoutMs = 4500) {
         costForTwo: r.costForTwo,
         address: r.address,
         emoji: r.emoji,
+        isOpen: r.isOpen !== false,
         location: locationForRestaurantName(r.name, index),
       }));
 

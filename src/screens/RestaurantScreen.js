@@ -43,8 +43,14 @@ export default function RestaurantScreen({ route }) {
 
   if (!restaurant) return null;
 
+  const isClosed = restaurant.isOpen === false;
+
   // Called when user taps "Add" on a dish that has no cart entry yet.
   const handleAdd = (item) => {
+    if (isClosed) {
+      Alert.alert('Restaurant closed', `${restaurant.name} isn't accepting orders right now.`);
+      return;
+    }
     if (cartRestaurantId && cartRestaurantId !== item.restaurantId) {
       const currentRestaurant = getRestaurantById(cartRestaurantId);
       Alert.alert(
@@ -105,6 +111,11 @@ export default function RestaurantScreen({ route }) {
             <Text style={styles.emoji}>{restaurant.emoji}</Text>
           </View>
           <Text style={styles.name}>{restaurant.name}</Text>
+          {isClosed && (
+            <View style={styles.closedBadge}>
+              <Text style={styles.closedBadgeText}>Currently Closed</Text>
+            </View>
+          )}
           <Text style={styles.cuisine}>{restaurant.cuisine}</Text>
           <View style={styles.metaRow}>
             <Ionicons name="star" size={14} color={colors.warning} />
@@ -140,8 +151,11 @@ export default function RestaurantScreen({ route }) {
                   onDecrease={() => setItemQuantity(item.id, quantity - 1)}
                 />
               ) : (
-                <TouchableOpacity style={styles.addButton} onPress={() => handleAdd(item)}>
-                  <Text style={styles.addButtonText}>Add</Text>
+                <TouchableOpacity
+                  style={[styles.addButton, isClosed && styles.addButtonDisabled]}
+                  onPress={() => handleAdd(item)}
+                >
+                  <Text style={[styles.addButtonText, isClosed && styles.addButtonTextDisabled]}>Add</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -249,6 +263,18 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 2,
   },
+  closedBadge: {
+    backgroundColor: colors.danger,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
+  closedBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -316,6 +342,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: colors.primary,
+  },
+  addButtonDisabled: {
+    borderColor: colors.border,
+  },
+  addButtonTextDisabled: {
+    color: colors.textMuted,
   },
   // ── modal / sheet ────────────────────────────────────────────
   modalOverlay: {

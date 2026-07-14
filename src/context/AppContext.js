@@ -465,6 +465,36 @@ export function AppProvider({ children }) {
     }
   }, [authToken, fetchOrderHistory, logout]);
 
+  const rateOrder = useCallback(async (orderId, rating) => {
+    if (!authToken) {
+      return { success: false, message: 'Your session is missing. Please log out and log back in.' };
+    }
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/orders/${orderId}/rate`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ rating }),
+      });
+      if (res.status === 401) {
+        await logout();
+        return { success: false, message: 'Your session has expired. Please log in again.' };
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not submit your rating.');
+      }
+      const updated = await res.json();
+      setOrder((prev) => (prev && prev._id === updated._id ? updated : prev));
+      fetchOrderHistory();
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  }, [authToken, fetchOrderHistory, logout]);
+
   const resetOrder = useCallback(() => setOrder(null), []);
 
   const value = useMemo(
@@ -493,6 +523,7 @@ export function AppProvider({ children }) {
       fetchOrderHistory,
       placeOrder,
       cancelOrder,
+      rateOrder,
       reorderOrder,
       resetOrder,
       favoriteRestaurantIds,
@@ -526,6 +557,7 @@ export function AppProvider({ children }) {
       fetchOrderHistory,
       placeOrder,
       cancelOrder,
+      rateOrder,
       reorderOrder,
       resetOrder,
       favoriteRestaurantIds,
