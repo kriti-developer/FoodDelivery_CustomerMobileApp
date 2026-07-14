@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
-export default function RestaurantCard({ restaurant, onPress }) {
+export default function RestaurantCard({ restaurant, onPress, isFavorite, onToggleFavorite }) {
   return (
     <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={onPress}>
       <View style={styles.emojiWrap}>
@@ -19,6 +19,22 @@ export default function RestaurantCard({ restaurant, onPress }) {
           <Text style={styles.metaText}>{restaurant.deliveryTime}</Text>
         </View>
       </View>
+      {onToggleFavorite && (
+        <TouchableOpacity
+          style={styles.favoriteButton}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          onPress={(e) => {
+            e.stopPropagation();
+            onToggleFavorite();
+          }}
+        >
+          <Ionicons
+            name={isFavorite ? 'heart' : 'heart-outline'}
+            size={20}
+            color={isFavorite ? colors.primary : colors.textMuted}
+          />
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }
@@ -73,5 +89,9 @@ const styles = StyleSheet.create({
   },
   metaIconSpacing: {
     marginLeft: 12,
+  },
+  favoriteButton: {
+    paddingLeft: 8,
+    justifyContent: 'center',
   },
 });

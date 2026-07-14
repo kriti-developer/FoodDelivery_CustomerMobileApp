@@ -15,6 +15,16 @@ import { getMenuItemById, loadCatalogFromBackend } from '../data/mockData';
 const REGISTERED_USER_KEY = '@food_app/registeredUser';
 const SESSION_KEY = '@food_app/session';
 const REQUEST_TIMEOUT_MS = 4500;
+const STATUS_ALERT_DURATION_MS = 4000;
+
+const ORDER_STATUS_MESSAGES = {
+  confirmed: 'Your order has been confirmed!',
+  preparing: 'The kitchen has started preparing your order.',
+  ready: 'Your order is packed and waiting for a delivery partner.',
+  'on-the-way': 'Your order is out for delivery!',
+  delivered: 'Your order has been delivered. Enjoy! 🎉',
+  cancelled: 'Your order was cancelled.',
+};
 
 const AppContext = createContext(null);
 
@@ -37,7 +47,23 @@ export function AppProvider({ children }) {
   const [order, setOrder] = useState(null);
   const [orderHistory, setOrderHistory] = useState([]);
   const [menuItem, setMenuItem] = useState(null);
+  const [favoriteRestaurantIds, setFavoriteRestaurantIds] = useState([]);
+  const [statusAlert, setStatusAlert] = useState(null);
   const socketRef = useRef(null);
+  const statusAlertTimeoutRef = useRef(null);
+
+  const announceStatusChange = useCallback((status) => {
+    const message = ORDER_STATUS_MESSAGES[status];
+    if (!message) return;
+    setStatusAlert({ id: Date.now(), message });
+    if (statusAlertTimeoutRef.current) clearTimeout(statusAlertTimeoutRef.current);
+    statusAlertTimeoutRef.current = setTimeout(() => setStatusAlert(null), STATUS_ALERT_DURATION_MS);
+  }, []);
+
+  const dismissStatusAlert = useCallback(() => {
+    if (statusAlertTimeoutRef.current) clearTimeout(statusAlertTimeoutRef.current);
+    setStatusAlert(null);
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(SESSION_KEY)
@@ -140,7 +166,13 @@ export function AppProvider({ children }) {
     });
 
     socket.on('order:updated', (updatedOrder) => {
-      setOrder((prev) => (prev && prev._id === updatedOrder._id ? updatedOrder : prev));
+      setOrder((prev) => {
+        if (!prev || prev._id !== updatedOrder._id) return prev;
+        if (prev.status !== updatedOrder.status) {
+          announceStatusChange(updatedOrder.status);
+        }
+        return updatedOrder;
+      });
     });
 
     return () => {
@@ -218,6 +250,64 @@ export function AppProvider({ children }) {
     fetchOrderHistory();
   }, [fetchOrderHistory]);
 
+  const fetchFavorites = useCallback(async () => {
+    if (!authToken) {
+      setFavoriteRestaurantIds([]);
+      return;
+    }
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/customers/favorites`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (res.status === 401) {
+        await logout();
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json();
+      setFavoriteRestaurantIds(Array.isArray(data) ? data.map((r) => r._id) : []);
+    } catch {
+      // Keep whatever favorites are already loaded if the backend is unreachable.
+    }
+  }, [authToken, logout]);
+
+  useEffect(() => {
+    fetchFavorites();
+  }, [fetchFavorites]);
+
+  const isFavoriteRestaurant = useCallback(
+    (restaurantId) => favoriteRestaurantIds.includes(restaurantId),
+    [favoriteRestaurantIds]
+  );
+
+  const toggleFavoriteRestaurant = useCallback(async (restaurantId) => {
+    if (!authToken) return;
+    const isFavorite = favoriteRestaurantIds.includes(restaurantId);
+    // Optimistic update so the star responds instantly.
+    setFavoriteRestaurantIds((prev) =>
+      isFavorite ? prev.filter((id) => id !== restaurantId) : [...prev, restaurantId]
+    );
+    try {
+      const res = await fetchWithTimeout(
+        `${API_BASE}/api/customers/favorites/${restaurantId}`,
+        {
+          method: isFavorite ? 'DELETE' : 'POST',
+          headers: { Authorization: `Bearer ${authToken}` },
+        }
+      );
+      if (res.status === 401) {
+        await logout();
+        return;
+      }
+      if (!res.ok) throw new Error();
+    } catch {
+      // Revert the optimistic update if the request failed.
+      setFavoriteRestaurantIds((prev) =>
+        isFavorite ? [...prev, restaurantId] : prev.filter((id) => id !== restaurantId)
+      );
+    }
+  }, [authToken, favoriteRestaurantIds, logout]);
+
   const updateProfile = useCallback(async ({ name, email, phone, address }) => {
     const nextUser = { ...(user || {}), name, email, phone, address };
     await saveSession({ token: authToken, user: nextUser });
@@ -253,6 +343,29 @@ export function AppProvider({ children }) {
   }, []);
 
   const clearCart = useCallback(() => setCart({}), []);
+
+  // Rebuilds the cart from a past order's items, so the customer can
+  // reorder in one tap. Dishes that no longer exist in the current
+  // catalog (removed/renamed) are silently skipped.
+  const reorderOrder = useCallback((pastOrder) => {
+    const nextCart = {};
+    const skippedNames = [];
+    (pastOrder?.items || []).forEach(({ menuItem, quantity, note }) => {
+      const itemId = typeof menuItem === 'string' ? menuItem : menuItem?._id;
+      const catalogItem = itemId && getMenuItemById(itemId);
+      if (!catalogItem) {
+        skippedNames.push((typeof menuItem === 'object' && menuItem?.name) || 'an item');
+        return;
+      }
+      const existing = nextCart[itemId];
+      nextCart[itemId] = {
+        quantity: (existing?.quantity || 0) + (quantity || 1),
+        note: note || existing?.note || '',
+      };
+    });
+    setCart(nextCart);
+    return { addedCount: Object.keys(nextCart).length, skippedNames };
+  }, []);
 
   const cartItems = useMemo(
     () =>
@@ -326,6 +439,32 @@ export function AppProvider({ children }) {
     }
   }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, fetchOrderHistory, logout]);
 
+  const cancelOrder = useCallback(async (orderId) => {
+    if (!authToken) {
+      return { success: false, message: 'Your session is missing. Please log out and log back in.' };
+    }
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/orders/${orderId}/cancel`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (res.status === 401) {
+        await logout();
+        return { success: false, message: 'Your session has expired. Please log in again.' };
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not cancel this order.');
+      }
+      const updated = await res.json();
+      setOrder((prev) => (prev && prev._id === updated._id ? updated : prev));
+      fetchOrderHistory();
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  }, [authToken, fetchOrderHistory, logout]);
+
   const resetOrder = useCallback(() => setOrder(null), []);
 
   const value = useMemo(
@@ -353,7 +492,14 @@ export function AppProvider({ children }) {
       orderHistory,
       fetchOrderHistory,
       placeOrder,
+      cancelOrder,
+      reorderOrder,
       resetOrder,
+      favoriteRestaurantIds,
+      isFavoriteRestaurant,
+      toggleFavoriteRestaurant,
+      statusAlert,
+      dismissStatusAlert,
     }),
     [
       user,
@@ -379,7 +525,14 @@ export function AppProvider({ children }) {
       orderHistory,
       fetchOrderHistory,
       placeOrder,
+      cancelOrder,
+      reorderOrder,
       resetOrder,
+      favoriteRestaurantIds,
+      isFavoriteRestaurant,
+      toggleFavoriteRestaurant,
+      statusAlert,
+      dismissStatusAlert,
     ]
   );
 

@@ -24,7 +24,16 @@ const NOTE_MAX_LENGTH = 150;
 
 export default function RestaurantScreen({ route }) {
   const { restaurantId } = route.params;
-  const { cart, addToCart, replaceCart, setItemQuantity, cartRestaurantId, catalogVersion } = useApp();
+  const {
+    cart,
+    addToCart,
+    replaceCart,
+    setItemQuantity,
+    cartRestaurantId,
+    catalogVersion,
+    isFavoriteRestaurant,
+    toggleFavoriteRestaurant,
+  } = useApp();
   const restaurant = useMemo(() => getRestaurantById(restaurantId), [restaurantId, catalogVersion]);
   const menuItems = useMemo(() => getMenuItemsByRestaurant(restaurantId), [restaurantId, catalogVersion]);
 
@@ -81,6 +90,17 @@ export default function RestaurantScreen({ route }) {
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.favoriteButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => toggleFavoriteRestaurant(restaurant.id)}
+          >
+            <Ionicons
+              name={isFavoriteRestaurant(restaurant.id) ? 'heart' : 'heart-outline'}
+              size={24}
+              color={isFavoriteRestaurant(restaurant.id) ? colors.primary : colors.textMuted}
+            />
+          </TouchableOpacity>
           <View style={styles.emojiWrap}>
             <Text style={styles.emoji}>{restaurant.emoji}</Text>
           </View>
@@ -199,6 +219,13 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     paddingVertical: 24,
+    position: 'relative',
+  },
+  favoriteButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    padding: 8,
   },
   emojiWrap: {
     width: 72,

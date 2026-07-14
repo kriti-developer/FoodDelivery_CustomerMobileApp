@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,10 +19,13 @@ const STATUS_LABELS = {
   pending: 'Placed',
   confirmed: 'Confirmed',
   preparing: 'Preparing',
+  ready: 'Ready for pickup',
   'on-the-way': 'Out for delivery',
   delivered: 'Delivered',
   cancelled: 'Cancelled',
 };
+
+const CANCELLABLE_STATUSES = ['pending', 'confirmed', 'preparing'];
 
 // Driven by the order's real status now (pending/confirmed/preparing/
 // on-the-way/delivered), pushed live via the order:updated socket event in
@@ -41,11 +44,49 @@ const STATUS_TO_STAGE_INDEX = {
 const OUT_FOR_DELIVERY_INDEX = ORDER_STAGES.findIndex((stage) => stage.key === 'out_for_delivery');
 
 export default function OrdersScreen({ navigation }) {
-  const { order, resetOrder, orderHistory, fetchOrderHistory } = useApp();
+  const { order, resetOrder, orderHistory, fetchOrderHistory, reorderOrder, cancelOrder } = useApp();
   const insets = useSafeAreaInsets();
   const [now, setNow] = useState(Date.now());
   const [rating, setRating] = useState(0);
+  const [isCancelling, setIsCancelling] = useState(false);
   const scrollViewRef = useRef(null);
+
+  const handleReorder = (pastOrder) => {
+    const { addedCount, skippedNames } = reorderOrder(pastOrder);
+    if (addedCount === 0) {
+      Alert.alert('Not available', 'None of the items from this order are available anymore.');
+      return;
+    }
+    if (skippedNames.length > 0) {
+      Alert.alert(
+        'Some items are no longer available',
+        `${skippedNames.join(', ')} could not be added, but the rest are in your cart.`
+      );
+    }
+    navigation.navigate('Cart');
+  };
+
+  const handleCancelOrder = () => {
+    Alert.alert(
+      'Cancel this order?',
+      'The restaurant will be notified and your order will not be prepared.',
+      [
+        { text: 'Keep Order', style: 'cancel' },
+        {
+          text: 'Cancel Order',
+          style: 'destructive',
+          onPress: async () => {
+            setIsCancelling(true);
+            const result = await cancelOrder(order._id);
+            setIsCancelling(false);
+            if (!result.success) {
+              Alert.alert('Could not cancel order', result.message);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -114,10 +155,29 @@ export default function OrdersScreen({ navigation }) {
                 {itemCount} item{itemCount === 1 ? '' : 's'}
               </Text>
               <Text style={styles.historyTotal}>₹{item.totalPrice}</Text>
+              <TouchableOpacity style={styles.reorderButton} onPress={() => handleReorder(item)}>
+                <Ionicons name="repeat" size={15} color={colors.primary} />
+                <Text style={styles.reorderButtonText}>Reorder</Text>
+              </TouchableOpacity>
             </View>
           );
         }}
       />
+    );
+  }
+
+  if (order.status === 'cancelled') {
+    return (
+      <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
+        <Text style={styles.heading}>Order Cancelled</Text>
+        <Text style={styles.orderTime}>
+          Placed at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+        <View style={styles.doneWrap}>
+          <Text style={styles.doneText}>This order was cancelled and won't be prepared.</Text>
+          <PrimaryButton title="Done" onPress={resetOrder} />
+        </View>
+      </ScrollView>
     );
   }
 
@@ -216,6 +276,18 @@ export default function OrdersScreen({ navigation }) {
           );
         })}
       </View>
+
+      {CANCELLABLE_STATUSES.includes(order.status) && (
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={handleCancelOrder}
+          disabled={isCancelling}
+        >
+          <Text style={styles.cancelButtonText}>
+            {isCancelling ? 'Cancelling…' : 'Cancel Order'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {showMap && restaurant && (
         <View style={styles.mapWrap}>
@@ -541,5 +613,36 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     marginTop: 8,
+  },
+  reorderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  reorderButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  cancelButton: {
+    marginTop: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.danger,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.danger,
   },
 });

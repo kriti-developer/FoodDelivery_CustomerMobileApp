@@ -22,7 +22,13 @@ const SORT_OPTIONS = [
 ];
 
 export default function HomeScreen({ navigation }) {
-  const { user, catalogVersion } = useApp();
+  const {
+    user,
+    catalogVersion,
+    favoriteRestaurantIds,
+    isFavoriteRestaurant,
+    toggleFavoriteRestaurant,
+  } = useApp();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState(null);
@@ -31,6 +37,10 @@ export default function HomeScreen({ navigation }) {
   const topRated = useMemo(() => getTopRatedRestaurants(4), [catalogVersion]);
   const sortedRestaurants = useMemo(() => sortRestaurants(RESTAURANTS, sortBy), [sortBy, catalogVersion]);
   const searchResults = useMemo(() => searchCatalog(query), [query, catalogVersion]);
+  const favoriteRestaurants = useMemo(
+    () => RESTAURANTS.filter((r) => favoriteRestaurantIds.includes(r.id)),
+    [favoriteRestaurantIds, catalogVersion]
+  );
   const isSearching = query.trim().length > 0;
   const hasResults = searchResults.restaurants.length > 0 || searchResults.dishes.length > 0;
 
@@ -78,6 +88,8 @@ export default function HomeScreen({ navigation }) {
                     key={restaurant.id}
                     restaurant={restaurant}
                     onPress={() => openRestaurant(restaurant.id)}
+                    isFavorite={isFavoriteRestaurant(restaurant.id)}
+                    onToggleFavorite={() => toggleFavoriteRestaurant(restaurant.id)}
                   />
                 ))}
               </>
@@ -101,12 +113,29 @@ export default function HomeScreen({ navigation }) {
         )
       ) : (
         <>
+          {favoriteRestaurants.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Your Favorites</Text>
+              {favoriteRestaurants.map((restaurant) => (
+                <RestaurantCard
+                  key={restaurant.id}
+                  restaurant={restaurant}
+                  onPress={() => openRestaurant(restaurant.id)}
+                  isFavorite={isFavoriteRestaurant(restaurant.id)}
+                  onToggleFavorite={() => toggleFavoriteRestaurant(restaurant.id)}
+                />
+              ))}
+            </>
+          )}
+
           <Text style={styles.sectionTitle}>Top Rated</Text>
           {topRated.map((restaurant) => (
             <RestaurantCard
               key={restaurant.id}
               restaurant={restaurant}
               onPress={() => openRestaurant(restaurant.id)}
+              isFavorite={isFavoriteRestaurant(restaurant.id)}
+              onToggleFavorite={() => toggleFavoriteRestaurant(restaurant.id)}
             />
           ))}
 
@@ -139,6 +168,8 @@ export default function HomeScreen({ navigation }) {
               key={restaurant.id}
               restaurant={restaurant}
               onPress={() => openRestaurant(restaurant.id)}
+              isFavorite={isFavoriteRestaurant(restaurant.id)}
+              onToggleFavorite={() => toggleFavoriteRestaurant(restaurant.id)}
             />
           ))}
         </>
