@@ -44,7 +44,7 @@ export function AppProvider({ children }) {
   const [catalogVersion, setCatalogVersion] = useState(0);
   // cart shape: { [itemId]: { quantity: number, note: string } }
   const [cart, setCart] = useState({});
-  const [order, setOrder] = useState(null);
+  const [activeOrders, setActiveOrders] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
   const [menuItem, setMenuItem] = useState(null);
   const [favoriteRestaurantIds, setFavoriteRestaurantIds] = useState([]);
@@ -174,12 +174,17 @@ export function AppProvider({ children }) {
     });
 
     socket.on('order:updated', (updatedOrder) => {
-      setOrder((prev) => {
-        if (!prev || prev._id !== updatedOrder._id) return prev;
-        if (prev.status !== updatedOrder.status) {
-          announceStatusChange(updatedOrder.status);
-        }
-        return updatedOrder;
+      setActiveOrders((prev) => {
+        let matched = false;
+        const next = prev.map((o) => {
+          if (o._id !== updatedOrder._id) return o;
+          matched = true;
+          if (o.status !== updatedOrder.status) {
+            announceStatusChange(updatedOrder.status);
+          }
+          return updatedOrder;
+        });
+        return matched ? next : prev;
       });
     });
 
@@ -188,7 +193,9 @@ export function AppProvider({ children }) {
     // device - if it's ours, start tracking it live automatically.
     socket.on('order:new', (newOrder) => {
       if (userIdRef.current && newOrder.customerId === userIdRef.current) {
-        setOrder(newOrder);
+        setActiveOrders((prev) =>
+          prev.some((o) => o._id === newOrder._id) ? prev : [...prev, newOrder]
+        );
         setStatusAlert({ id: Date.now(), message: `Your scheduled order from ${newOrder.restaurant?.name || 'the restaurant'} has been placed!` });
         if (statusAlertTimeoutRef.current) clearTimeout(statusAlertTimeoutRef.current);
         statusAlertTimeoutRef.current = setTimeout(() => setStatusAlert(null), STATUS_ALERT_DURATION_MS);
@@ -241,7 +248,7 @@ export function AppProvider({ children }) {
     setUser(null);
     setAuthToken(null);
     setCart({});
-    setOrder(null);
+    setActiveOrders([]);
     setOrderHistory([]);
   }, []);
 
@@ -454,7 +461,7 @@ export function AppProvider({ children }) {
         throw new Error(data.error || 'Could not place your order. Please try again.');
       }
       const created = await res.json();
-      setOrder(created);
+      setActiveOrders((prev) => [...prev, created]);
       clearCart();
       fetchOrderHistory();
       return { success: true };
@@ -582,7 +589,7 @@ export function AppProvider({ children }) {
         throw new Error(data.error || 'Could not cancel this order.');
       }
       const updated = await res.json();
-      setOrder((prev) => (prev && prev._id === updated._id ? updated : prev));
+      setActiveOrders((prev) => prev.map((o) => (o._id === updated._id ? updated : o)));
       fetchOrderHistory();
       return { success: true };
     } catch (e) {
@@ -612,7 +619,7 @@ export function AppProvider({ children }) {
         throw new Error(data.error || 'Could not submit your rating.');
       }
       const updated = await res.json();
-      setOrder((prev) => (prev && prev._id === updated._id ? updated : prev));
+      setActiveOrders((prev) => prev.map((o) => (o._id === updated._id ? updated : o)));
       fetchOrderHistory();
       return { success: true };
     } catch (e) {
@@ -620,7 +627,10 @@ export function AppProvider({ children }) {
     }
   }, [authToken, fetchOrderHistory, logout]);
 
-  const resetOrder = useCallback(() => setOrder(null), []);
+  const resetOrder = useCallback(
+    (orderId) => setActiveOrders((prev) => prev.filter((o) => o._id !== orderId)),
+    []
+  );
 
   const value = useMemo(
     () => ({
@@ -643,7 +653,7 @@ export function AppProvider({ children }) {
       setItemQuantity,
       clearCart,
       menuItem,
-      order,
+      activeOrders,
       orderHistory,
       fetchOrderHistory,
       placeOrder,
@@ -681,7 +691,7 @@ export function AppProvider({ children }) {
       setItemQuantity,
       clearCart,
       menuItem,
-      order,
+      activeOrders,
       orderHistory,
       fetchOrderHistory,
       placeOrder,

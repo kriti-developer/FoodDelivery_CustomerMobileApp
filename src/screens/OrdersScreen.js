@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,106 +43,19 @@ const STATUS_TO_STAGE_INDEX = {
 };
 const OUT_FOR_DELIVERY_INDEX = ORDER_STAGES.findIndex((stage) => stage.key === 'out_for_delivery');
 
-export default function OrdersScreen({ navigation }) {
-  const {
-    order,
-    resetOrder,
-    orderHistory,
-    fetchOrderHistory,
-    reorderOrder,
-    cancelOrder,
-    rateOrder,
-    scheduledOrders,
-    fetchScheduledOrders,
-    cancelScheduledOrder,
-  } = useApp();
-  const insets = useSafeAreaInsets();
-  const [now, setNow] = useState(Date.now());
-  const [rating, setRating] = useState(0);
+// Full live-tracking view for a single order: stages, ETA, map, cancel,
+// and the post-delivery rating flow. Rendered once per entry in
+// activeOrders, so each card owns its own rating/cancelling state -
+// independent orders in flight shouldn't share one card's local state.
+function ActiveOrderCard({ order, now, cancelOrder, rateOrder, resetOrder }) {
+  const [rating, setRating] = useState(order.rating || 0);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
-  const [cancellingScheduledId, setCancellingScheduledId] = useState(null);
-  const scrollViewRef = useRef(null);
-  const alreadyRated = Boolean(order?.rating);
+  const alreadyRated = Boolean(order.rating);
 
-  const handleCancelScheduledOrder = (scheduledOrderId) => {
-    Alert.alert(
-      'Cancel this scheduled order?',
-      "It won't be placed automatically.",
-      [
-        { text: 'Keep It', style: 'cancel' },
-        {
-          text: 'Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            setCancellingScheduledId(scheduledOrderId);
-            const result = await cancelScheduledOrder(scheduledOrderId);
-            setCancellingScheduledId(null);
-            if (!result.success) {
-              Alert.alert('Could not cancel', result.message);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const renderScheduledOrders = () => {
-    if (scheduledOrders.length === 0) return null;
-    return (
-      <View style={styles.scheduledSection}>
-        <Text style={styles.heading}>Scheduled Orders</Text>
-        {scheduledOrders.map((scheduled) => {
-          const itemCount = (scheduled.items || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
-          return (
-            <View key={scheduled._id} style={styles.scheduledCard}>
-              <View style={styles.historyCardTop}>
-                <Text style={styles.historyRestaurant}>{scheduled.restaurant?.name || 'Restaurant'}</Text>
-                <View style={styles.scheduledBadge}>
-                  <Ionicons name="time-outline" size={12} color="#fff" />
-                  <Text style={styles.scheduledBadgeText}>
-                    {new Date(scheduled.scheduledFor).toLocaleString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.historyMeta}>
-                {itemCount} item{itemCount === 1 ? '' : 's'}
-              </Text>
-              <TouchableOpacity
-                style={styles.cancelScheduledButton}
-                disabled={cancellingScheduledId === scheduled._id}
-                onPress={() => handleCancelScheduledOrder(scheduled._id)}
-              >
-                <Text style={styles.cancelScheduledButtonText}>
-                  {cancellingScheduledId === scheduled._id ? 'Cancelling…' : 'Cancel'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          );
-        })}
-      </View>
-    );
-  };
-
-  const handleReorder = (pastOrder) => {
-    const { addedCount, skippedNames } = reorderOrder(pastOrder);
-    if (addedCount === 0) {
-      Alert.alert('Not available', 'None of the items from this order are available anymore.');
-      return;
-    }
-    if (skippedNames.length > 0) {
-      Alert.alert(
-        'Some items are no longer available',
-        `${skippedNames.join(', ')} could not be added, but the rest are in your cart.`
-      );
-    }
-    navigation.navigate('Cart');
-  };
+  useEffect(() => {
+    setRating(order.rating || 0);
+  }, [order._id, order.rating]);
 
   const handleCancelOrder = () => {
     Alert.alert(
@@ -166,21 +79,9 @@ export default function OrdersScreen({ navigation }) {
     );
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchOrderHistory();
-      fetchScheduledOrders();
-    }, [fetchOrderHistory, fetchScheduledOrders])
-  );
-
-  useEffect(() => {
-    if (!order) return;
-    setRating(order.rating || 0);
-  }, [order?._id, order?.rating]);
-
   const handleSubmitRating = async () => {
     if (rating === 0) {
-      resetOrder();
+      resetOrder(order._id);
       return;
     }
     setIsSubmittingRating(true);
@@ -191,109 +92,21 @@ export default function OrdersScreen({ navigation }) {
     }
   };
 
-  const stageIndex = order ? STATUS_TO_STAGE_INDEX[order.status] ?? 0 : 0;
+  const stageIndex = STATUS_TO_STAGE_INDEX[order.status] ?? 0;
   const isDelivered = stageIndex >= ORDER_STAGES.length - 1;
-
-  // Ticks while there's an order in flight, to drive the live ETA
-  // countdown and the partner marker's position on the map below.
-  useEffect(() => {
-    if (!order || isDelivered) return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [order?._id, isDelivered]);
-
-  useEffect(() => {
-    if (isDelivered) {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }
-  }, [isDelivered]);
-
-  if (!order) {
-    if (orderHistory.length === 0) {
-      if (scheduledOrders.length === 0) {
-        return (
-          <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
-            <Ionicons name="receipt-outline" size={64} color={colors.border} />
-            <Text style={styles.emptyTitle}>No orders yet</Text>
-            <Text style={styles.emptySubtitle}>Place an order to see its live status here.</Text>
-            <View style={styles.emptyButtonWrap}>
-              <PrimaryButton title="Browse Menu" onPress={() => navigation.navigate('Home')} />
-            </View>
-          </View>
-        );
-      }
-      return (
-        <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
-          {renderScheduledOrders()}
-        </ScrollView>
-      );
-    }
-
-    return (
-      <FlatList
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
-        data={orderHistory}
-        keyExtractor={(item) => item._id}
-        ListHeaderComponent={
-          <>
-            {renderScheduledOrders()}
-            <Text style={styles.heading}>Past Orders</Text>
-          </>
-        }
-        renderItem={({ item }) => {
-          const itemCount = (item.items || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
-          return (
-            <View style={styles.historyCard}>
-              <View style={styles.historyCardTop}>
-                <Text style={styles.historyRestaurant}>{item.restaurant?.name || 'Restaurant'}</Text>
-                <Text style={styles.historyStatus}>{STATUS_LABELS[item.status] || item.status}</Text>
-              </View>
-              <Text style={styles.historyMeta}>
-                {new Date(item.createdAt).toLocaleString([], {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-                {' · '}
-                {itemCount} item{itemCount === 1 ? '' : 's'}
-              </Text>
-              <Text style={styles.historyTotal}>₹{item.totalPrice}</Text>
-              {item.rating ? (
-                <View style={styles.historyRatingRow}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Ionicons
-                      key={star}
-                      name={star <= item.rating ? 'star' : 'star-outline'}
-                      size={13}
-                      color={colors.warning}
-                    />
-                  ))}
-                </View>
-              ) : null}
-              <TouchableOpacity style={styles.reorderButton} onPress={() => handleReorder(item)}>
-                <Ionicons name="repeat" size={15} color={colors.primary} />
-                <Text style={styles.reorderButtonText}>Reorder</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        }}
-      />
-    );
-  }
 
   if (order.status === 'cancelled') {
     return (
-      <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
+      <View style={styles.orderCard}>
         <Text style={styles.heading}>Order Cancelled</Text>
         <Text style={styles.orderTime}>
           Placed at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
         <View style={styles.doneWrap}>
           <Text style={styles.doneText}>This order was cancelled and won't be prepared.</Text>
-          <PrimaryButton title="Done" onPress={resetOrder} />
+          <PrimaryButton title="Done" onPress={() => resetOrder(order._id)} />
         </View>
-      </ScrollView>
+      </View>
     );
   }
 
@@ -340,10 +153,7 @@ export default function OrdersScreen({ navigation }) {
   }
 
   return (
-    <ScrollView
-      ref={scrollViewRef}
-      contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
-    >
+    <View style={styles.orderCard}>
       <Text style={styles.heading}>Order Status</Text>
       <Text style={styles.orderTime}>
         Placed at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -488,10 +298,216 @@ export default function OrdersScreen({ navigation }) {
                 ? 'Submit Rating'
                 : 'Done'
             }
-            onPress={alreadyRated ? resetOrder : handleSubmitRating}
+            onPress={alreadyRated ? () => resetOrder(order._id) : handleSubmitRating}
           />
         </View>
       )}
+    </View>
+  );
+}
+
+export default function OrdersScreen({ navigation }) {
+  const {
+    activeOrders,
+    orderHistory,
+    fetchOrderHistory,
+    reorderOrder,
+    cancelOrder,
+    rateOrder,
+    resetOrder,
+    scheduledOrders,
+    fetchScheduledOrders,
+    cancelScheduledOrder,
+  } = useApp();
+  const insets = useSafeAreaInsets();
+  const [now, setNow] = useState(Date.now());
+  const [cancellingScheduledId, setCancellingScheduledId] = useState(null);
+
+  const handleCancelScheduledOrder = (scheduledOrderId) => {
+    Alert.alert(
+      'Cancel this scheduled order?',
+      "It won't be placed automatically.",
+      [
+        { text: 'Keep It', style: 'cancel' },
+        {
+          text: 'Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            setCancellingScheduledId(scheduledOrderId);
+            const result = await cancelScheduledOrder(scheduledOrderId);
+            setCancellingScheduledId(null);
+            if (!result.success) {
+              Alert.alert('Could not cancel', result.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderScheduledOrders = () => {
+    if (scheduledOrders.length === 0) return null;
+    return (
+      <View style={styles.scheduledSection}>
+        <Text style={styles.heading}>Scheduled Orders</Text>
+        {scheduledOrders.map((scheduled) => {
+          const itemCount = (scheduled.items || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+          return (
+            <View key={scheduled._id} style={styles.scheduledCard}>
+              <View style={styles.historyCardTop}>
+                <Text style={styles.historyRestaurant}>{scheduled.restaurant?.name || 'Restaurant'}</Text>
+                <View style={styles.scheduledBadge}>
+                  <Ionicons name="time-outline" size={12} color="#fff" />
+                  <Text style={styles.scheduledBadgeText}>
+                    {new Date(scheduled.scheduledFor).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.historyMeta}>
+                {itemCount} item{itemCount === 1 ? '' : 's'}
+              </Text>
+              <TouchableOpacity
+                style={styles.cancelScheduledButton}
+                disabled={cancellingScheduledId === scheduled._id}
+                onPress={() => handleCancelScheduledOrder(scheduled._id)}
+              >
+                <Text style={styles.cancelScheduledButtonText}>
+                  {cancellingScheduledId === scheduled._id ? 'Cancelling…' : 'Cancel'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
+  const handleReorder = (pastOrder) => {
+    const { addedCount, skippedNames } = reorderOrder(pastOrder);
+    if (addedCount === 0) {
+      Alert.alert('Not available', 'None of the items from this order are available anymore.');
+      return;
+    }
+    if (skippedNames.length > 0) {
+      Alert.alert(
+        'Some items are no longer available',
+        `${skippedNames.join(', ')} could not be added, but the rest are in your cart.`
+      );
+    }
+    navigation.navigate('Cart');
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrderHistory();
+      fetchScheduledOrders();
+    }, [fetchOrderHistory, fetchScheduledOrders])
+  );
+
+  // Ticks while there's at least one order still in flight, to drive the
+  // live ETA countdown and partner marker position for every active card -
+  // one shared clock is enough since it's just wall-clock time, none of
+  // the math is order-specific.
+  const hasInFlightOrder = activeOrders.some(
+    (o) => o.status !== 'delivered' && o.status !== 'cancelled'
+  );
+  useEffect(() => {
+    if (!hasInFlightOrder) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [hasInFlightOrder]);
+
+  if (activeOrders.length === 0) {
+    if (orderHistory.length === 0) {
+      if (scheduledOrders.length === 0) {
+        return (
+          <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
+            <Ionicons name="receipt-outline" size={64} color={colors.border} />
+            <Text style={styles.emptyTitle}>No orders yet</Text>
+            <Text style={styles.emptySubtitle}>Place an order to see its live status here.</Text>
+            <View style={styles.emptyButtonWrap}>
+              <PrimaryButton title="Browse Menu" onPress={() => navigation.navigate('Home')} />
+            </View>
+          </View>
+        );
+      }
+      return (
+        <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
+          {renderScheduledOrders()}
+        </ScrollView>
+      );
+    }
+
+    return (
+      <FlatList
+        contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+        data={orderHistory}
+        keyExtractor={(item) => item._id}
+        ListHeaderComponent={
+          <>
+            {renderScheduledOrders()}
+            <Text style={styles.heading}>Past Orders</Text>
+          </>
+        }
+        renderItem={({ item }) => {
+          const itemCount = (item.items || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+          return (
+            <View style={styles.historyCard}>
+              <View style={styles.historyCardTop}>
+                <Text style={styles.historyRestaurant}>{item.restaurant?.name || 'Restaurant'}</Text>
+                <Text style={styles.historyStatus}>{STATUS_LABELS[item.status] || item.status}</Text>
+              </View>
+              <Text style={styles.historyMeta}>
+                {new Date(item.createdAt).toLocaleString([], {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                {' · '}
+                {itemCount} item{itemCount === 1 ? '' : 's'}
+              </Text>
+              <Text style={styles.historyTotal}>₹{item.totalPrice}</Text>
+              {item.rating ? (
+                <View style={styles.historyRatingRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Ionicons
+                      key={star}
+                      name={star <= item.rating ? 'star' : 'star-outline'}
+                      size={13}
+                      color={colors.warning}
+                    />
+                  ))}
+                </View>
+              ) : null}
+              <TouchableOpacity style={styles.reorderButton} onPress={() => handleReorder(item)}>
+                <Ionicons name="repeat" size={15} color={colors.primary} />
+                <Text style={styles.reorderButtonText}>Reorder</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }}
+      />
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}>
+      {activeOrders.map((order) => (
+        <ActiveOrderCard
+          key={order._id}
+          order={order}
+          now={now}
+          cancelOrder={cancelOrder}
+          rateOrder={rateOrder}
+          resetOrder={resetOrder}
+        />
+      ))}
     </ScrollView>
   );
 }
@@ -502,6 +518,12 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     backgroundColor: colors.background,
     flexGrow: 1,
+  },
+  orderCard: {
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 20,
   },
   heading: {
     fontSize: 22,
