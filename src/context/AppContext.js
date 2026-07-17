@@ -461,7 +461,9 @@ export function AppProvider({ children }) {
         throw new Error(data.error || 'Could not place your order. Please try again.');
       }
       const created = await res.json();
-      setActiveOrders((prev) => [...prev, created]);
+      setActiveOrders((prev) =>
+        prev.some((o) => o._id === created._id) ? prev : [...prev, created]
+      );
       clearCart();
       fetchOrderHistory();
       return { success: true };
