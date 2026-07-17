@@ -23,6 +23,7 @@ export default function CartScreen({ navigation }) {
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(defaultScheduledDate);
   const [showPicker, setShowPicker] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleTimeChange = (event, picked) => {
     setShowPicker(Platform.OS === 'ios');
@@ -39,31 +40,37 @@ export default function CartScreen({ navigation }) {
   };
 
   const handlePlaceOrder = async () => {
-    if (!isScheduling) {
-      const result = await placeOrder();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      if (!isScheduling) {
+        const result = await placeOrder();
+        if (result.success) {
+          navigation.navigate('Orders');
+        } else {
+          Alert.alert('Could not place order', result.message);
+        }
+        return;
+      }
+
+      const leadMs = scheduledDate.getTime() - Date.now();
+      if (leadMs < MIN_SCHEDULE_MS || leadMs > MAX_SCHEDULE_MS) {
+        Alert.alert('Pick a valid time', 'Scheduled orders must be between 15 minutes and 3 hours from now.');
+        return;
+      }
+
+      const result = await scheduleOrder(scheduledDate.getTime());
       if (result.success) {
+        const time = scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setIsScheduling(false);
+        setScheduledDate(defaultScheduledDate());
+        Alert.alert('Order scheduled!', `We'll place your order automatically around ${time}.`);
         navigation.navigate('Orders');
       } else {
-        Alert.alert('Could not place order', result.message);
+        Alert.alert('Could not schedule order', result.message);
       }
-      return;
-    }
-
-    const leadMs = scheduledDate.getTime() - Date.now();
-    if (leadMs < MIN_SCHEDULE_MS || leadMs > MAX_SCHEDULE_MS) {
-      Alert.alert('Pick a valid time', 'Scheduled orders must be between 15 minutes and 3 hours from now.');
-      return;
-    }
-
-    const result = await scheduleOrder(scheduledDate.getTime());
-    if (result.success) {
-      const time = scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setIsScheduling(false);
-      setScheduledDate(defaultScheduledDate());
-      Alert.alert('Order scheduled!', `We'll place your order automatically around ${time}.`);
-      navigation.navigate('Orders');
-    } else {
-      Alert.alert('Could not schedule order', result.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -179,6 +186,7 @@ export default function CartScreen({ navigation }) {
         <PrimaryButton
           title={isScheduling ? 'Schedule Order' : 'Place Order'}
           onPress={handlePlaceOrder}
+          loading={isSubmitting}
         />
       </View>
     </View>

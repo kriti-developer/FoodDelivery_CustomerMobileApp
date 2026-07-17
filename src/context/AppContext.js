@@ -53,6 +53,8 @@ export function AppProvider({ children }) {
   const socketRef = useRef(null);
   const statusAlertTimeoutRef = useRef(null);
   const userIdRef = useRef(null);
+  const isPlacingOrderRef = useRef(false);
+  const isSchedulingOrderRef = useRef(false);
 
   useEffect(() => {
     userIdRef.current = user?.id || user?._id || null;
@@ -421,6 +423,10 @@ export function AppProvider({ children }) {
     if (!authToken) {
       return { success: false, message: 'Your session is missing. Please log out and log back in.' };
     }
+    if (isPlacingOrderRef.current) {
+      return { success: false, message: 'Your order is already being placed.' };
+    }
+    isPlacingOrderRef.current = true;
     try {
       const res = await fetchWithTimeout(`${API_BASE}/api/orders`, {
         method: 'POST',
@@ -454,6 +460,8 @@ export function AppProvider({ children }) {
       return { success: true };
     } catch (e) {
       return { success: false, message: e.message };
+    } finally {
+      isPlacingOrderRef.current = false;
     }
   }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, fetchOrderHistory, logout]);
 
@@ -492,6 +500,10 @@ export function AppProvider({ children }) {
     if (!authToken) {
       return { success: false, message: 'Your session is missing. Please log out and log back in.' };
     }
+    if (isSchedulingOrderRef.current) {
+      return { success: false, message: 'Your order is already being scheduled.' };
+    }
+    isSchedulingOrderRef.current = true;
     try {
       const res = await fetchWithTimeout(`${API_BASE}/api/scheduled-orders`, {
         method: 'POST',
@@ -523,6 +535,8 @@ export function AppProvider({ children }) {
       return { success: true };
     } catch (e) {
       return { success: false, message: e.message };
+    } finally {
+      isSchedulingOrderRef.current = false;
     }
   }, [authToken, cartCount, cartItems, cartRestaurantId, clearCart, fetchScheduledOrders, logout]);
 
